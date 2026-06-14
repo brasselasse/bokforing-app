@@ -178,17 +178,18 @@ function belopp(t){
 function newId(){ return "co"+Date.now()+Math.floor(Math.random()*1000); }
 function tomtForetag(namn){
   return { id:newId(), firma:namn||"Min Enskilda Firma", orgnr:"", nextVer:1, trans:[],
-    kunder:[], fakturor:[], nextFaktNr:1,
-    fakturaInfo:{ adress:"", postnr:"", ort:"", epost:"", telefon:"", bankgiro:"", iban:"", momsnr:"", fskatt:true } };
+    kunder:[], artiklar:[], fakturor:[], nextFaktNr:1,
+    fakturaInfo:{ adress:"", postnr:"", ort:"", epost:"", telefon:"", bankgiro:"", iban:"", momsnr:"", fskatt:true, logo:"" } };
 }
 function normCompany(c){
   if(!c) return c;
   if(!Array.isArray(c.trans)) c.trans=[];
   if(typeof c.nextVer!=="number") c.nextVer=1;
   if(!Array.isArray(c.kunder)) c.kunder=[];
+  if(!Array.isArray(c.artiklar)) c.artiklar=[];
   if(!Array.isArray(c.fakturor)) c.fakturor=[];
   if(typeof c.nextFaktNr!=="number") c.nextFaktNr=1;
-  if(!c.fakturaInfo) c.fakturaInfo={ adress:"", postnr:"", ort:"", epost:"", telefon:"", bankgiro:"", iban:"", momsnr:"", fskatt:true };
+  if(!c.fakturaInfo) c.fakturaInfo={ adress:"", postnr:"", ort:"", epost:"", telefon:"", bankgiro:"", iban:"", momsnr:"", fskatt:true, logo:"" };
   return c;
 }
 
@@ -220,6 +221,44 @@ function save(){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({companies:state.companies, activeId:state.activeId})); }
   catch(e){ console.error("Kunde inte spara", e); }
   try{ scheduleGhPush(); }catch(e){}
+}
+
+/* ---- Lösenordslås (lokal låsskärm, ej kryptering) ---- */
+let _unlocked=false;
+const LOCK_KEY="ef-lock";
+function lockHash(){ try{ return localStorage.getItem(LOCK_KEY)||""; }catch(e){ return ""; } }
+async function hashPw(pw){
+  try{ if(window.crypto && crypto.subtle){ const buf=await crypto.subtle.digest("SHA-256", new TextEncoder().encode("ef:"+pw));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join(""); } }catch(e){}
+  let h=5381; const s="ef:"+pw; for(let i=0;i<s.length;i++){ h=(((h<<5)+h)^s.charCodeAt(i))>>>0; } return "x"+h.toString(16);
+}
+function renderLock(){
+  document.getElementById("app").innerHTML=`<div style="max-width:360px;margin:14vh auto 0;text-align:center">
+    <div class="serif" style="font-size:26px;margin-bottom:6px">Bokföring</div>
+    <div class="note" style="margin-bottom:20px">Ange lösenord för att låsa upp.</div>
+    <input class="input" id="lock-pw" type="password" placeholder="Lösenord" style="width:100%;text-align:center;margin-bottom:8px">
+    <div id="lock-err" class="note" style="color:var(--clay);min-height:18px"></div>
+    <button class="btn" id="lock-btn" style="width:100%;justify-content:center">Lås upp</button>
+  </div>`;
+  const tryUnlock=async ()=>{ const h=await hashPw(document.getElementById("lock-pw").value);
+    if(h===lockHash()){ _unlocked=true; render(); }
+    else { document.getElementById("lock-err").textContent="Fel lösenord."; document.getElementById("lock-pw").value=""; } };
+  document.getElementById("lock-btn").onclick=tryUnlock;
+  const pw=document.getElementById("lock-pw"); pw.onkeydown=e=>{ if(e.key==="Enter") tryUnlock(); }; pw.focus();
+}
+
+/* ---- Logotyp ---- */
+function processLogo(file){
+  return new Promise((res,rej)=>{
+    if(!file.type.startsWith("image/")){ rej(new Error("Välj en bildfil.")); return; }
+    const fr=new FileReader();
+    fr.onload=()=>{ const img=new Image(); img.onload=()=>{
+      const max=360; let w=img.width,h=img.height; if(w>max||h>max){ const s=Math.min(max/w,max/h); w=Math.round(w*s); h=Math.round(h*s); }
+      const cv=document.createElement("canvas"); cv.width=w; cv.height=h; cv.getContext("2d").drawImage(img,0,0,w,h);
+      res(cv.toDataURL("image/png")); };
+      img.onerror=()=>rej(new Error("Kunde inte läsa bilden.")); img.src=fr.result; };
+    fr.onerror=()=>rej(new Error("Kunde inte läsa filen.")); fr.readAsDataURL(file);
+  });
 }
 
 /* ---- Kvittolagring: IndexedDB med fallback till localStorage ---- */
@@ -391,6 +430,7 @@ function kpi(label,val,sub,tone){
 /*  Huvudrendering                                             */
 /* ============================================================ */
 function render(){
+  if(lockHash() && !_unlocked){ renderLock(); return; }
   if(state.year!=="alla" && !years().includes(state.year)) state.year="alla";
   const s = co();
   const rows = filtrerade();
@@ -486,6 +526,7 @@ function render(){
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn" id="fakt-ny">+ Ny faktura</button>
         <button class="btn ghost" id="fakt-kunder">Kunder</button>
+        <button class="btn ghost" id="fakt-artiklar">Artiklar</button>
         <div style="flex:1"></div>
         <button class="btn ghost" id="fakt-info">Fakturauppgifter</button>
       </div>
@@ -497,7 +538,7 @@ function render(){
     <div class="header">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
         <div style="flex:1">
-          <div class="brand"><span class="firm">${esc(s.firma)}</span>${s.orgnr?`<span class="org">${esc(s.orgnr)}</span>`:""}</div>
+          <div class="brand">${s.fakturaInfo&&s.fakturaInfo.logo?`<img src="${s.fakturaInfo.logo}" alt="" style="height:30px;max-width:120px;object-fit:contain;margin-right:4px;vertical-align:middle">`:""}<span class="firm">${esc(s.firma)}</span>${s.orgnr?`<span class="org">${esc(s.orgnr)}</span>`:""}</div>
           <div class="tag">Löpande bokföring · enskild firma · kontantmetoden</div>
         </div>
         <button class="x" id="btn-inst" title="Inställningar">⚙</button>
@@ -540,6 +581,7 @@ function render(){
   });
   const fNy=document.getElementById("fakt-ny"); if(fNy) fNy.onclick=()=>openFaktura();
   const fKund=document.getElementById("fakt-kunder"); if(fKund) fKund.onclick=openKunder;
+  const fArt=document.getElementById("fakt-artiklar"); if(fArt) fArt.onclick=openArtiklar;
   const fInfo=document.getElementById("fakt-info"); if(fInfo) fInfo.onclick=openFakturaInfo;
   document.querySelectorAll("[data-faktvisa]").forEach(b=>b.onclick=()=>{
     const f=co().fakturor.find(x=>String(x.id)===b.dataset.faktvisa); if(f) openFakturaView(f);
@@ -881,6 +923,8 @@ function openFaktura(existing){
     : [{benamning:"",antal:1,aPris:"",moms:25}];
   const kundOpts = `<option value="">— välj sparad kund —</option>`+
     co().kunder.map(k=>`<option value="${k.id}">${esc(k.namn)}</option>`).join("");
+  const artOpts = `<option value="">+ lägg till från artikel…</option>`+
+    co().artiklar.map(a=>`<option value="${a.id}">${esc(a.benamning)}${a.aPris!=null?" · "+kr(a.aPris):""}</option>`).join("");
   const nr = existing ? existing.nr : co().nextFaktNr;
   const e = existing || {};
   root.innerHTML=`
@@ -906,7 +950,10 @@ function openFaktura(existing){
      <div style="overflow-x:auto"><table class="tbl"><thead><tr>
        <th>Beskrivning</th><th>Antal</th><th>À-pris (exkl. moms)</th><th>Moms</th><th class="r">Belopp</th><th></th>
      </tr></thead><tbody id="f-rader"></tbody></table></div>
-     <button class="btn ghost" id="f-addrad" style="margin-top:8px">+ Lägg till rad</button>
+     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+       <button class="btn ghost" id="f-addrad">+ Lägg till rad</button>
+       ${co().artiklar.length?`<select class="select" id="f-artikel" style="flex:1;min-width:180px">${artOpts}</select>`:""}
+     </div>
      <div id="f-tot" style="margin-top:14px"></div>
      <label class="label" style="margin-top:14px">Meddelande (valfritt)</label>
      <input class="input" id="f-medd" value="${esc(e.meddelande||"")}" placeholder="t.ex. Tack för ditt förtroende" style="width:100%">
@@ -946,6 +993,9 @@ function openFaktura(existing){
     $("f-rader").querySelectorAll(".fr-del").forEach(el=>el.onclick=()=>{ rader.splice(+el.dataset.i,1); if(!rader.length)rader.push({benamning:"",antal:1,aPris:"",moms:25}); renderRader(); uppdateraTot(); });
   }
   $("f-addrad").onclick=()=>{ rader.push({benamning:"",antal:1,aPris:"",moms:25}); renderRader(); uppdateraTot(); };
+  const artSel=$("f-artikel");
+  if(artSel) artSel.onchange=()=>{ const a=co().artiklar.find(x=>x.id===artSel.value); artSel.value="";
+    if(!a) return; rader.push({ benamning:a.benamning||"", antal:1, aPris:a.aPris!=null?a.aPris:"", moms:Number(a.moms)||0 }); renderRader(); uppdateraTot(); };
   renderRader(); uppdateraTot();
 
   $("f-spara").onclick=()=>{
@@ -1071,7 +1121,7 @@ function fakturaHTML(f){
     return `<tr><td>${esc(r.benamning||"")}</td><td class="fk-r">${esc(String(r.antal||0))}</td><td class="fk-r">${esc(kr(r.aPris||0))}</td><td class="fk-r">${esc((Number(r.moms)||0)+"%")}</td><td class="fk-r">${esc(kr(n))}</td></tr>`; }).join("");
   const momsRader=Object.keys(b.perRate).filter(r=>Number(r)>0).map(r=>`<div class="row"><span>Moms ${r}%</span><span>${esc(kr(b.perRate[r]*Number(r)/100))}</span></div>`).join("");
   return `<div class="fk-top">
-    <div><div class="fk-firm">${esc(c.firma)}</div>
+    <div>${fi.logo?`<img src="${fi.logo}" alt="" style="max-height:70px;max-width:240px;object-fit:contain;margin-bottom:10px;display:block">`:""}<div class="fk-firm">${esc(c.firma)}</div>
       <div style="color:#666;margin-top:4px">${esc(fi.adress||"")}${(fi.postnr||fi.ort)?"<br>"+esc((fi.postnr||"")+" "+(fi.ort||"")):""}${fi.epost?"<br>"+esc(fi.epost):""}${fi.telefon?"<br>"+esc(fi.telefon):""}</div></div>
     <div style="text-align:right"><div class="fk-h">FAKTURA</div>
       <div style="margin-top:10px"><div class="fk-label">Fakturanr</div>${esc(String(f.nr))}</div>
@@ -1111,7 +1161,10 @@ function openKunder(){
          <div><label class="label">Postnr & ort</label><input class="input" id="ku-postort" style="width:100%"></div>
          <div><label class="label">Org.nr</label><input class="input" id="ku-orgnr" style="width:100%"></div>
        </div>
-       <button class="btn ghost" id="ku-add" style="margin-top:12px">+ Lägg till kund</button>
+       <div style="display:flex;gap:10px;margin-top:12px">
+         <button class="btn ghost" id="ku-add" style="flex:1">+ Lägg till kund</button>
+         <button class="btn ghost" id="ku-import" style="flex:1">⭳ Importera CSV</button>
+       </div>
        <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:8px">${lista}</div>
        <div style="display:flex;margin-top:18px"><button class="btn" id="ku-stang" style="flex:1">Klar</button></div>
      </div></div>`;
@@ -1121,9 +1174,102 @@ function openKunder(){
     $("ku-add").onclick=()=>{ const namn=$("ku-namn").value.trim(); if(!namn){ alert("Ange namn."); return; }
       co().kunder.push({ id:"k"+Date.now()+Math.floor(Math.random()*1e6), namn, epost:$("ku-epost").value.trim(), adress:$("ku-adress").value.trim(), postort:$("ku-postort").value.trim(), orgnr:$("ku-orgnr").value.trim() });
       save(); rita(); };
+    $("ku-import").onclick=()=>openImportRegister("kunder", rita);
     root.querySelectorAll("[data-kdel]").forEach(btn=>btn.onclick=()=>{ co().kunder=co().kunder.filter(k=>k.id!==btn.dataset.kdel); save(); rita(); });
   }
   rita();
+}
+
+function openArtiklar(){
+  const root=document.getElementById("modal"); const $=id=>document.getElementById(id);
+  function rita(){
+    const lista = co().artiklar.length
+      ? co().artiklar.map(a=>`<div class="rr-row"><span>${a.artikelnr?`<span class="konto">${esc(a.artikelnr)}</span> `:""}${esc(a.benamning)} <span class="konto">${esc(kr(a.aPris||0)+" · "+(a.moms||0)+"%"+(a.enhet?" · "+a.enhet:""))}</span></span><button class="del" data-adel="${a.id}">🗑</button></div>`).join("")
+      : '<div class="note">Inga artiklar ännu.</div>';
+    root.innerHTML=`
+     <div class="modal-bg" id="arbg"><div class="modal" style="max-width:560px">
+       <div class="modal-head"><div class="serif" style="font-size:22px">Artiklar</div><button class="x" id="ar-close">✕</button></div>
+       <div class="form-grid">
+         <div><label class="label">Artikelnr (valfritt)</label><input class="input" id="ar-nr" style="width:100%"></div>
+         <div><label class="label">Enhet (valfritt)</label><input class="input" id="ar-enhet" placeholder="st, tim, kg…" style="width:100%"></div>
+         <div style="grid-column:1/-1"><label class="label">Benämning</label><input class="input" id="ar-ben" style="width:100%"></div>
+         <div><label class="label">À-pris (exkl. moms)</label><input class="input" id="ar-pris" type="number" min="0" step="0.01" style="width:100%"></div>
+         <div><label class="label">Moms</label><select class="select" id="ar-moms" style="width:100%">${[25,12,6,0].map(m=>`<option value="${m}">${m}%</option>`).join("")}</select></div>
+       </div>
+       <div style="display:flex;gap:10px;margin-top:12px">
+         <button class="btn ghost" id="ar-add" style="flex:1">+ Lägg till artikel</button>
+         <button class="btn ghost" id="ar-import" style="flex:1">⭳ Importera CSV</button>
+       </div>
+       <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:8px;max-height:34vh;overflow:auto">${lista}</div>
+       <div style="display:flex;margin-top:18px"><button class="btn" id="ar-stang" style="flex:1">Klar</button></div>
+     </div></div>`;
+    const close=()=>root.innerHTML="";
+    $("ar-close").onclick=close; $("ar-stang").onclick=close;
+    $("arbg").onclick=ev=>{ if(ev.target.id==="arbg") close(); };
+    $("ar-add").onclick=()=>{ const ben=$("ar-ben").value.trim(); if(!ben){ alert("Ange benämning."); return; }
+      co().artiklar.push({ id:"a"+Date.now()+Math.floor(Math.random()*1e6), artikelnr:$("ar-nr").value.trim(), benamning:ben, aPris:Number($("ar-pris").value)||0, moms:Number($("ar-moms").value)||0, enhet:$("ar-enhet").value.trim() });
+      save(); rita(); };
+    $("ar-import").onclick=()=>openImportRegister("artiklar", rita);
+    root.querySelectorAll("[data-adel]").forEach(btn=>btn.onclick=()=>{ co().artiklar=co().artiklar.filter(a=>a.id!==btn.dataset.adel); save(); rita(); });
+  }
+  rita();
+}
+
+// Generisk CSV-import för kund-/artikelregister
+function openImportRegister(kind, onDone){
+  const root=document.getElementById("modal"); const $=id=>document.getElementById(id);
+  let rows=[];
+  const falt = kind==="kunder"
+    ? [["namn","Namn",["namn","kund","name","företag","foretag"]],["epost","E-post",["epost","mail","e-post","email"]],["adress","Adress",["adress","gata","address"]],["postort","Postnr & ort",["postort","ort","postnr","stad","zip","city"]],["orgnr","Org.nr",["orgnr","org","orgnummer","vat","momsnr"]]]
+    : [["benamning","Benämning",["benämning","benamning","artikel","beskriv","name","produkt","namn"]],["aPris","À-pris",["pris","apris","á-pris","a-pris","belopp","price","styckpris"]],["moms","Moms %",["moms","vat","tax"]],["enhet","Enhet",["enhet","unit","st"]],["artikelnr","Artikelnr",["artikelnr","artnr","nummer","sku","kod","id"]]];
+  const titel = kind==="kunder" ? "Importera kunder (CSV)" : "Importera artiklar (CSV)";
+  root.innerHTML=`
+   <div class="modal-bg" id="irbg"><div class="modal" style="max-width:640px">
+     <div class="modal-head"><div class="serif" style="font-size:22px">${titel}</div><button class="x" id="ir-close">✕</button></div>
+     <div id="ir-body">
+       <p class="note" style="margin-top:0">Välj en CSV-fil eller klistra in raderna nedan.</p>
+       <input type="file" id="ir-file" accept=".csv,.txt,text/csv" class="input" style="width:100%;margin-bottom:12px">
+       <textarea id="ir-paste" class="input" placeholder="…eller klistra in CSV-text" style="width:100%;min-height:80px;font-family:'IBM Plex Mono',monospace;font-size:12px"></textarea>
+       <div style="display:flex;gap:10px;margin-top:14px"><button class="btn ghost" id="ir-avbryt" style="flex:1">Avbryt</button><button class="btn" id="ir-tolka" style="flex:1">Tolka →</button></div>
+     </div></div></div>`;
+  const close=()=>root.innerHTML="";
+  $("ir-close").onclick=close; $("ir-avbryt").onclick=close;
+  $("irbg").onclick=ev=>{ if(ev.target.id==="irbg") close(); };
+  $("ir-file").onchange=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ rows=parseCSVText(decodeFile(r.result)); steg2(); }; r.readAsArrayBuffer(f); };
+  $("ir-tolka").onclick=()=>{ const t=$("ir-paste").value; if(t.trim()){ rows=parseCSVText(t); steg2(); } else if(!$("ir-file").files[0]) alert("Välj fil eller klistra in text."); };
+
+  function guess(headers,names){ for(let i=0;i<headers.length;i++){ const h=headers[i].toLowerCase(); if(names.some(n=>h.includes(n))) return i; } return -1; }
+  function steg2(){
+    if(!rows.length){ alert("Inga rader hittades."); return; }
+    const maxCols=Math.max(...rows.map(r=>r.length));
+    const headers=rows[0].map((h,i)=>(h&&h.trim())?h.trim():"Kolumn "+(i+1));
+    const hasHeader=rows[0].filter(c=>/\d/.test(c)).length<=1;
+    const opt=(sel)=>`<option value="-1">— ingen —</option>`+headers.map((h,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(h)}</option>`).join("");
+    const mapH=falt.map(([key,label,names])=>{ const g=guess(headers,names);
+      return `<div><label class="label">${label}</label><select class="select" id="ir-map-${key}" style="width:100%">${opt(g)}</select></div>`; }).join("");
+    $("ir-body").innerHTML=`
+      <p class="note" style="margin-top:0">${rows.length} rader. Koppla kolumnerna.</p>
+      <div class="form-grid">${mapH}</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer"><input type="checkbox" id="ir-head" ${hasHeader?"checked":""}> Första raden är rubrik</label>
+      <div style="display:flex;gap:10px;margin-top:18px"><button class="btn ghost" id="ir-back" style="flex:1">← Tillbaka</button><button class="btn" id="ir-kor" style="flex:1">Importera</button></div>`;
+    $("ir-back").onclick=()=>openImportRegister(kind,onDone);
+    $("ir-kor").onclick=()=>{
+      const map={}; falt.forEach(([key])=>{ map[key]=Number($("ir-map-"+key).value); });
+      if(kind==="kunder" && map.namn<0){ alert("Kolumnen Namn måste väljas."); return; }
+      if(kind==="artiklar" && map.benamning<0){ alert("Kolumnen Benämning måste väljas."); return; }
+      const data=$("ir-head").checked?rows.slice(1):rows;
+      let n=0;
+      data.forEach(r=>{
+        const g=key=>map[key]>=0?String(r[map[key]]||"").trim():"";
+        if(kind==="kunder"){ const namn=g("namn"); if(!namn) return;
+          co().kunder.push({ id:"k"+Date.now()+Math.floor(Math.random()*1e6)+n, namn, epost:g("epost"), adress:g("adress"), postort:g("postort"), orgnr:g("orgnr") }); n++; }
+        else { const ben=g("benamning"); if(!ben) return;
+          co().artiklar.push({ id:"a"+Date.now()+Math.floor(Math.random()*1e6)+n, artikelnr:g("artikelnr"), benamning:ben, aPris:parseBelopp(g("aPris"))||0, moms:(()=>{ const m=parseBelopp(g("moms")); return isNaN(m)?25:m; })(), enhet:g("enhet") }); n++; }
+      });
+      save(); close(); if(onDone) onDone();
+      alert(n+(kind==="kunder"?" kunder":" artiklar")+" importerades.");
+    };
+  }
 }
 
 function openFakturaInfo(){
@@ -1146,6 +1292,9 @@ function openFakturaInfo(){
      </div>
      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer">
        <input type="checkbox" id="fi-fskatt" ${fi.fskatt?"checked":""}> Godkänd för F-skatt (visas på fakturan)</label>
+     <label class="label" style="margin-top:16px">Logotyp (visas på fakturor)</label>
+     <input type="file" id="fi-logofil" accept="image/*" class="input" style="width:100%">
+     <div id="fi-logoprev"></div>
      <div style="display:flex;gap:10px;margin-top:20px">
        <button class="btn ghost" id="fi-avbryt" style="flex:1">Avbryt</button>
        <button class="btn" id="fi-spara" style="flex:1">Spara</button>
@@ -1154,10 +1303,21 @@ function openFakturaInfo(){
   const close=()=>root.innerHTML="";
   $("fi-close").onclick=close; $("fi-avbryt").onclick=close;
   $("fibg").onclick=ev=>{ if(ev.target.id==="fibg") close(); };
+  let logoData = fi.logo||"";
+  function visaLogo(){ const el=$("fi-logoprev");
+    if(!logoData){ el.innerHTML=""; return; }
+    el.innerHTML=`<div class="kvitto-prev"><img src="${logoData}" style="width:auto;height:48px;max-width:160px;object-fit:contain;border:none">
+      <div style="flex:1;font-size:13px;color:var(--muted)">Logotyp vald</div>
+      <button class="del" id="fi-logobort">🗑</button></div>`;
+    $("fi-logobort").onclick=()=>{ logoData=""; $("fi-logofil").value=""; visaLogo(); };
+  }
+  visaLogo();
+  $("fi-logofil").onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+    try{ logoData=await processLogo(f); visaLogo(); }catch(err){ alert(err.message); $("fi-logofil").value=""; } };
   $("fi-spara").onclick=()=>{
     co().fakturaInfo={ adress:$("fi-adress").value.trim(), postnr:$("fi-postnr").value.trim(), ort:$("fi-ort").value.trim(),
       epost:$("fi-epost").value.trim(), telefon:$("fi-telefon").value.trim(), bankgiro:$("fi-bankgiro").value.trim(),
-      iban:$("fi-iban").value.trim(), momsnr:$("fi-momsnr").value.trim(), fskatt:$("fi-fskatt").checked };
+      iban:$("fi-iban").value.trim(), momsnr:$("fi-momsnr").value.trim(), fskatt:$("fi-fskatt").checked, logo:logoData };
     const nn=parseInt($("fi-nextnr").value,10); if(!isNaN(nn)&&nn>0) co().nextFaktNr=nn;
     save(); close(); render();
   };
@@ -1167,7 +1327,7 @@ function openFakturaInfo(){
 /*  Modal: Inställningar                                       */
 /* ============================================================ */
 function openInst(){
-  const s=co(), root=document.getElementById("modal"), cfg=ghCfg();
+  const s=co(), root=document.getElementById("modal"), cfg=ghCfg(), harLas=!!lockHash();
   const coOpts=state.companies.map(c=>`<option value="${c.id}" ${c.id===state.activeId?"selected":""}>${esc(c.firma)}</option>`).join("");
   root.innerHTML=`
    <div class="modal-bg" id="ibg"><div class="modal">
@@ -1207,6 +1367,17 @@ function openInst(){
          <button class="btn ghost" id="gh-pull" style="flex:1">⭱ Hämta från GitHub</button>
        </div>
        <div id="i-gh-status" class="note" style="margin-top:10px"></div>
+     </div>
+     <div style="border-top:1px solid var(--line);margin:22px 0 0;padding-top:18px">
+       <div class="serif" style="font-size:17px;margin-bottom:4px">Lås appen</div>
+       <p class="note" style="margin-top:0">Ett lösenord som krävs när appen öppnas i den här webbläsaren. Obs: detta är en lokal låsskärm, inte kryptering – det egentliga skyddet av datan kommer från att ditt data-repo på GitHub är privat. Ett glömt lösenord kan inte återställas.</p>
+       ${harLas
+         ? `<input class="input" id="lk-ny" type="password" placeholder="Nytt lösenord" style="width:100%;margin-bottom:8px">
+            <div style="display:flex;gap:10px"><button class="btn ghost" id="lk-byt" style="flex:1">Byt lösenord</button><button class="btn ghost" id="lk-bort" style="flex:1;color:var(--clay)">Ta bort lås</button></div>`
+         : `<input class="input" id="lk-ny" type="password" placeholder="Nytt lösenord" style="width:100%;margin-bottom:8px">
+            <input class="input" id="lk-ny2" type="password" placeholder="Bekräfta lösenord" style="width:100%;margin-bottom:8px">
+            <button class="btn ghost" id="lk-akt" style="width:100%">Aktivera lås</button>`}
+       <div id="lk-status" class="note" style="margin-top:8px"></div>
      </div>
      <div style="display:flex;gap:10px;margin-top:20px">
        <button class="btn ghost" id="i-avbryt" style="flex:1">Stäng</button>
@@ -1263,6 +1434,21 @@ function openInst(){
     state.activeId=state.companies[0].id; state.year="alla"; state.manad="alla";
     save(); render(); openInst();
   };
+  const lkStatus=m=>{ const el=document.getElementById("lk-status"); if(el) el.textContent=m; };
+  const lkAkt=document.getElementById("lk-akt");
+  if(lkAkt) lkAkt.onclick=async ()=>{
+    const a=document.getElementById("lk-ny").value, b=document.getElementById("lk-ny2").value;
+    if(!a){ lkStatus("Ange ett lösenord."); return; }
+    if(a!==b){ lkStatus("Lösenorden matchar inte."); return; }
+    try{ localStorage.setItem(LOCK_KEY, await hashPw(a)); _unlocked=true; openInst(); }catch(e){ lkStatus("Kunde inte spara."); }
+  };
+  const lkByt=document.getElementById("lk-byt");
+  if(lkByt) lkByt.onclick=async ()=>{
+    const a=document.getElementById("lk-ny").value; if(!a){ lkStatus("Ange ett nytt lösenord."); return; }
+    try{ localStorage.setItem(LOCK_KEY, await hashPw(a)); lkStatus("Lösenordet ändrat."); document.getElementById("lk-ny").value=""; }catch(e){ lkStatus("Kunde inte spara."); }
+  };
+  const lkBort=document.getElementById("lk-bort");
+  if(lkBort) lkBort.onclick=()=>{ if(!confirm("Ta bort lösenordslåset?")) return; try{ localStorage.removeItem(LOCK_KEY); }catch(e){} openInst(); };
   document.getElementById("i-spara").onclick=()=>{
     saveCurrentFields(); save(); close(); render();
   };
