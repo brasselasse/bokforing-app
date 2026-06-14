@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bokföring – enskild firma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F1E9; --ink:#1C1B17; --muted:#7A746A; --line:#E4DECE;
+  --card:#FFFFFF; --green:#2F6E4F; --green-soft:#E7F0E9;
+  --clay:#B14A2E; --clay-soft:#F6E7DF; --gold:#C8A04A;
+}
+*{box-sizing:border-box;}
+html,body{margin:0; background:var(--paper); color:var(--ink);
+  font-family:'Hanken Grotesk',-apple-system,system-ui,sans-serif; -webkit-font-smoothing:antialiased;}
+.serif{font-family:'Fraunces',Georgia,serif;}
+.num{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; letter-spacing:-.02em;}
+.wrap{max-width:1000px; margin:0 auto; padding:0 20px 80px;}
+
+.header{padding:28px 0 18px; border-bottom:1px solid var(--line);}
+.brand{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+.firm{font-family:'Fraunces',serif; font-size:30px; font-weight:600; line-height:1; letter-spacing:-.01em;}
+.org{color:var(--muted); font-size:13px; font-family:'IBM Plex Mono',monospace;}
+.tag{color:var(--muted); font-size:13px; margin-top:6px;}
+
+.nav{display:flex; gap:4px; margin-top:20px; flex-wrap:wrap;}
+.tab{display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border:1px solid transparent;
+  border-radius:999px; background:transparent; color:var(--muted); font-size:14px; font-weight:500;
+  cursor:pointer; transition:.15s; font-family:inherit;}
+.tab:hover{color:var(--ink); background:#fff;}
+.tab.on{background:var(--ink); color:var(--paper); border-color:var(--ink);}
+
+.grid{display:grid; gap:16px; margin-top:24px;}
+.kpis{grid-template-columns:repeat(4,1fr);}
+.kpis3{grid-template-columns:repeat(3,1fr);}
+@media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr);} .kpis3{grid-template-columns:1fr;}}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px;}
+.kpi-label{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);}
+.kpi-val{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; font-size:24px;
+  font-weight:500; margin-top:10px; line-height:1;}
+.kpi-sub{font-size:12px; color:var(--muted); margin-top:7px;}
+.pos{color:var(--green);} .neg{color:var(--clay);}
+
+.sec-title{font-family:'Fraunces',serif; font-size:20px; font-weight:500; margin:32px 0 12px;}
+.controls{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:20px;}
+.select,.input{font-family:'Hanken Grotesk',sans-serif; font-size:14px; color:var(--ink); background:#fff;
+  border:1px solid var(--line); border-radius:10px; padding:10px 12px; outline:none;}
+.input:focus,.select:focus{border-color:var(--ink);}
+.label{font-size:12px; color:var(--muted); margin-bottom:6px; display:block; font-weight:500;}
+
+.btn{display:inline-flex; align-items:center; gap:7px; padding:10px 16px; border-radius:10px;
+  border:1px solid var(--ink); background:var(--ink); color:var(--paper); font-family:inherit;
+  font-size:14px; font-weight:600; cursor:pointer; transition:.15s;}
+.btn:hover{opacity:.88;}
+.btn.ghost{background:#fff; color:var(--ink);}
+.btn.ghost:hover{background:var(--paper); opacity:1;}
+.btn:disabled{opacity:.45; cursor:default;}
+
+.seg{display:inline-flex; background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:3px;}
+.seg button{border:none; background:transparent; padding:8px 16px; border-radius:7px; cursor:pointer;
+  font-family:inherit; font-size:14px; font-weight:600; color:var(--muted);}
+.seg button.on{background:#fff; color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.06);}
+
+.form-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+@media(max-width:640px){.form-grid{grid-template-columns:1fr;}}
+
+table.tbl{width:100%; border-collapse:collapse; font-size:14px;}
+table.tbl th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted);
+  font-weight:600; padding:0 12px 10px; border-bottom:1px solid var(--line);}
+table.tbl td{padding:13px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+table.tbl tr:last-child td{border-bottom:none;}
+.r{text-align:right; font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums;}
+.konto{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--muted);}
+
+.pill{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:600;}
+.pill.in{background:var(--green-soft); color:var(--green);}
+.pill.ut{background:var(--clay-soft); color:var(--clay);}
+
+.del{border:none; background:transparent; color:var(--muted); cursor:pointer; padding:4px; border-radius:6px; font-family:inherit;}
+.del:hover{color:var(--clay); background:var(--clay-soft);}
+.attach{border:none; background:transparent; color:var(--muted); cursor:pointer; padding:4px 6px; border-radius:6px; font-family:inherit; font-size:14px;}
+.attach:hover{color:var(--green); background:var(--green-soft);}
+.attach.has{color:var(--green);}
+.kvitto-prev{display:flex; align-items:center; gap:12px; margin-top:14px; padding:10px; background:#fff; border:1px solid var(--line); border-radius:12px;}
+.kvitto-prev img{width:54px; height:54px; object-fit:cover; border-radius:8px; border:1px solid var(--line);}
+.kvitto-prev .pdf{width:54px; height:54px; display:flex; align-items:center; justify-content:center; background:var(--clay-soft); color:var(--clay); border-radius:8px; font-size:11px; font-weight:700;}
+
+.empty{text-align:center; padding:50px 20px; color:var(--muted);}
+.empty .ic{opacity:.4; margin-bottom:12px; font-size:30px;}
+
+.rr-row{display:flex; justify-content:space-between; padding:9px 0; font-size:14px;}
+.rr-row.sum{border-top:1px solid var(--line); margin-top:6px; padding-top:12px; font-weight:600;}
+.rr-row.total{border-top:2px solid var(--ink); margin-top:8px; padding-top:14px; font-size:17px;}
+.rr-row .num{font-size:14px;}
+.rr-row.total .num{font-size:18px;}
+
+.modal-bg{position:fixed; inset:0; background:rgba(28,27,23,.45); display:flex; align-items:flex-start;
+  justify-content:center; padding:40px 16px; z-index:50; overflow:auto;}
+.modal{background:var(--paper); border-radius:18px; padding:24px; width:100%; max-width:560px;
+  box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;}
+.x{border:1px solid var(--line); background:#fff; border-radius:9px; padding:7px 10px; cursor:pointer;
+  color:var(--muted); font-family:inherit; font-size:15px;}
+.x:hover{color:var(--ink);}
+.note{font-size:12px; color:var(--muted); line-height:1.5; margin-top:14px;}
+.foot{margin-top:60px; padding-top:20px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); line-height:1.6;}
+
+.chart-bar{transition:.2s;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="app"></div>
+  <div class="foot">
+    Datan sparas lokalt i din webbläsare och finns kvar nästa gång du öppnar sidan.
+    Verktyget är ett stöd för löpande bokföring och ersätter inte revisor eller skatterådgivning.
+  </div>
+</div>
+<div id="modal"></div>
+
+<script>
+/* ============================================================ */
+/*  Kontoplan (förenklad BAS)                                    */
+/* ============================================================ */
+const KONTON = {
+  intakt: [
+    { konto:"3001", namn:"Försäljning varor/tjänster 25%", moms:25 },
+    { konto:"3002", namn:"Försäljning 12%", moms:12 },
+    { konto:"3003", namn:"Försäljning 6%", moms:6 },
+    { konto:"3004", namn:"Försäljning momsfri", moms:0 },
+    { konto:"3740", namn:"Öresavrundning", moms:0 },
+    { konto:"3990", namn:"Övriga intäkter", moms:0 },
+  ],
+  kostnad: [
+    { konto:"4000", namn:"Varuinköp", moms:25 },
+    { konto:"5010", namn:"Lokalhyra", moms:25 },
+    { konto:"5400", namn:"Förbrukningsinventarier", moms:25 },
+    { konto:"5460", namn:"Förbrukningsmaterial", moms:25 },
+    { konto:"5611", namn:"Drivmedel personbil", moms:25 },
+    { konto:"5800", namn:"Resekostnader", moms:25 },
+    { konto:"5810", namn:"Biljetter/kollektivtrafik 6%", moms:6 },
+    { konto:"5831", namn:"Kost & logi vid resa 12%", moms:12 },
+    { konto:"5910", namn:"Annonsering & reklam", moms:25 },
+    { konto:"6110", namn:"Kontorsmateriel", moms:25 },
+    { konto:"6212", namn:"Mobiltelefon", moms:25 },
+    { konto:"6230", namn:"Internet & datakommunikation", moms:25 },
+    { konto:"6540", namn:"IT-tjänster / programvara", moms:25 },
+    { konto:"6570", namn:"Bankkostnader", moms:0 },
+    { konto:"6991", namn:"Övriga kostnader", moms:25 },
+  ],
+};
+const STORAGE_KEY = "ef-bokforing-v1";
+const MAN = ["jan","feb","mar","apr","maj","jun","jul","aug","sep","okt","nov","dec"];
+
+/* ============================================================ */
+/*  Hjälpfunktioner                                             */
+/* ============================================================ */
+const kr = n => (Number(n)||0).toLocaleString("sv-SE",{minimumFractionDigits:2,maximumFractionDigits:2})+" kr";
+const krShort = n => Math.round(Number(n)||0).toLocaleString("sv-SE")+" kr";
+const idag = () => new Date().toISOString().slice(0,10);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function belopp(t){
+  const inp = Number(t.beloppInput)||0, r = Number(t.momssats)||0;
+  let netto, moms, brutto;
+  if(t.inklMoms){ brutto=inp; moms=inp*(r/(100+r)); netto=brutto-moms; }
+  else { netto=inp; moms=inp*(r/100); brutto=netto+moms; }
+  return { brutto, netto, moms };
+}
+
+/* ============================================================ */
+/*  State + lagring                                            */
+/* ============================================================ */
+function newId(){ return "co"+Date.now()+Math.floor(Math.random()*1000); }
+function tomtForetag(namn){
+  return { id:newId(), firma:namn||"Min Enskilda Firma", orgnr:"", nextVer:1, trans:[],
+    kunder:[], fakturor:[], nextFaktNr:1,
+    fakturaInfo:{ adress:"", postnr:"", ort:"", epost:"", telefon:"", bankgiro:"", iban:"", momsnr:"", fskatt:true } };
+}
+function normCompany(c){
+  if(!c) return c;
+  if(!Array.isArray(c.trans)) c.trans=[];
+  if(typeof c.nextVer!=="number") c.nextVer=1;
+  if(!Array.isArray(c.kunder)) c.kunder=[];
+  if(!Array.isArray(c.fakturor)) c.fakturor=[];
+  if(typeof c.nextFaktNr!=="number") c.nextFaktNr=1;
+  if(!c.fakturaInfo) c.fakturaInfo={ adress:"", postnr:"", ort:"", epost:"", telefon:"", bankgiro:"", iban:"", momsnr:"", fskatt:true };
+  return c;
+}
+
+let state = {
+  companies:[], activeId:null,
+  vy:"oversikt", year:"alla", manad:"alla",
+};
+// Aktivt företag
+function co(){ return state.companies.find(c=>c.id===state.activeId) || state.companies[0]; }
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const d = JSON.parse(raw);
+      if(Array.isArray(d.companies)){ state.companies=d.companies; state.activeId=d.activeId||(d.companies[0]&&d.companies[0].id); }
+      else if(d.settings){ // gammalt format -> migrera till ett företag
+        const c=tomtForetag(d.settings.firma); c.orgnr=d.settings.orgnr||""; c.nextVer=d.settings.nextVer||1;
+        c.trans=Array.isArray(d.trans)?d.trans:[];
+        state.companies=[c]; state.activeId=c.id;
+      }
+    }
+  }catch(e){ console.warn("Kunde inte läsa sparad data", e); }
+  if(!state.companies || !state.companies.length){ const c=tomtForetag(); state.companies=[c]; state.activeId=c.id; }
+  state.companies.forEach(normCompany);
+  if(!state.activeId || !co()) state.activeId=state.companies[0].id;
+}
+function save(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({companies:state.companies, activeId:state.activeId})); }
+  catch(e){ console.error("Kunde inte spara", e); }
+  try{ scheduleGhPush(); }catch(e){}
+}
+
+/* ---- Kvittolagring: IndexedDB med fallback till localStorage ---- */
+const DB_NAME="ef-bokforing-kvitton", STORE="kvitton";
+const Kvitton = (function(){
+  let mode=null, dbp=null, inited=null;
+  function openIDB(){
+    return new Promise(res=>{
+      try{
+        const req=indexedDB.open(DB_NAME,1);
+        req.onupgradeneeded=()=>{ const d=req.result; if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:"id"}); };
+        req.onsuccess=()=>res(req.result);
+        req.onerror=()=>res(null);
+        req.onblocked=()=>res(null);
+      }catch(e){ res(null); }
+    });
+  }
+  function init(){ if(!inited) inited=(async()=>{ const d=await openIDB(); if(d){mode="idb"; dbp=d;} else mode="ls"; })(); return inited; }
+  async function put(rec){
+    await init();
+    if(mode==="idb") return new Promise((res,rej)=>{ const tx=dbp.transaction(STORE,"readwrite"); tx.objectStore(STORE).put(rec); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+    try{ localStorage.setItem("ef-kvitto:"+rec.id, JSON.stringify(rec)); }
+    catch(e){ throw new Error("Lagringen är full – kvittot kunde inte sparas. Prova en mindre bild eller publicera sidan på webben för större lagring."); }
+  }
+  async function get(id){
+    await init();
+    if(mode==="idb") return new Promise((res,rej)=>{ const tx=dbp.transaction(STORE,"readonly"); const r=tx.objectStore(STORE).get(id); r.onsuccess=()=>res(r.result||null); r.onerror=()=>rej(r.error); });
+    const raw=localStorage.getItem("ef-kvitto:"+id); return raw?JSON.parse(raw):null;
+  }
+  async function del(id){
+    await init();
+    if(mode==="idb") return new Promise((res,rej)=>{ const tx=dbp.transaction(STORE,"readwrite"); tx.objectStore(STORE).delete(id); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+    localStorage.removeItem("ef-kvitto:"+id);
+  }
+  async function all(){
+    await init();
+    if(mode==="idb") return new Promise((res,rej)=>{ const tx=dbp.transaction(STORE,"readonly"); const r=tx.objectStore(STORE).getAll(); r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); });
+    const out=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf("ef-kvitto:")===0){ try{ out.push(JSON.parse(localStorage.getItem(k))); }catch(e){} } } return out;
+  }
+  async function clear(){
+    await init();
+    if(mode==="idb") return new Promise((res,rej)=>{ const tx=dbp.transaction(STORE,"readwrite"); tx.objectStore(STORE).clear(); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+    const ks=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf("ef-kvitto:")===0) ks.push(k); } ks.forEach(k=>localStorage.removeItem(k));
+  }
+  return { put, get, del, all, clear };
+})();
+
+// Komprimerar bilder, läser PDF som de är
+function processKvitto(file){
+  return new Promise((res,rej)=>{
+    if(file.type==="application/pdf"){
+      const fr=new FileReader();
+      fr.onload=()=>res({ name:file.name, type:"application/pdf", dataUrl:fr.result });
+      fr.onerror=()=>rej(new Error("Kunde inte läsa filen.")); fr.readAsDataURL(file); return;
+    }
+    if(!file.type.startsWith("image/")){ rej(new Error("Endast bilder och PDF stöds.")); return; }
+    const fr=new FileReader();
+    fr.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        const max=1400; let w=img.width, h=img.height;
+        if(w>max||h>max){ const s=Math.min(max/w,max/h); w=Math.round(w*s); h=Math.round(h*s); }
+        const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+        const ctx=cv.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h); ctx.drawImage(img,0,0,w,h);
+        res({ name:file.name.replace(/\.(png|webp|gif|heic)$/i,".jpg"), type:"image/jpeg", dataUrl:cv.toDataURL("image/jpeg",0.72) });
+      };
+      img.onerror=()=>rej(new Error("Kunde inte läsa bilden.")); img.src=fr.result;
+    };
+    fr.onerror=()=>rej(new Error("Kunde inte läsa filen.")); fr.readAsDataURL(file);
+  });
+}
+
+/* ============================================================ */
+/*  Beräkningar                                                */
+/* ============================================================ */
+function filtrerade(){
+  let arr = co().trans.slice();
+  if(state.year!=="alla") arr=arr.filter(t=>t.datum.slice(0,4)===state.year);
+  if(state.manad!=="alla") arr=arr.filter(t=>t.datum.slice(5,7)===state.manad);
+  return arr.sort((a,b)=> a.datum<b.datum?1 : a.datum>b.datum?-1 : b.ver-a.ver);
+}
+function years(){
+  const s=new Set(); co().trans.forEach(t=>s.add(t.datum.slice(0,4)));
+  return Array.from(s).sort().reverse();
+}
+function summor(rows){
+  let intakt=0,kostnad=0,utMoms=0,inMoms=0;
+  rows.forEach(t=>{ const b=belopp(t);
+    if(t.typ==="intakt"){intakt+=b.netto; utMoms+=b.moms;} else {kostnad+=b.netto; inMoms+=b.moms;}});
+  return { intakt, kostnad, resultat:intakt-kostnad, utMoms, inMoms, moms:utMoms-inMoms };
+}
+function manadsData(){
+  if(state.year!=="alla"){
+    // Hela det valda årets 12 månader
+    const arr=co().trans.filter(t=>t.datum.slice(0,4)===state.year);
+    const sums=Array(12).fill(0);
+    arr.forEach(t=>{ const mm=Number(t.datum.slice(5,7))-1; const b=belopp(t); sums[mm]+=(t.typ==="intakt"?b.netto:-b.netto); });
+    return sums.map((v,i)=>({ namn:MAN[i], resultat:Math.round(v) }));
+  }
+  const m={};
+  co().trans.forEach(t=>{ const k=t.datum.slice(0,7); if(!m[k])m[k]={k,intakt:0,kostnad:0};
+    const b=belopp(t); if(t.typ==="intakt")m[k].intakt+=b.netto; else m[k].kostnad+=b.netto; });
+  return Object.values(m).sort((a,b)=>a.k<b.k?-1:1).slice(-12).map(d=>{
+    const mm=Number(d.k.slice(5)); return { namn:MAN[mm-1], resultat:Math.round(d.intakt-d.kostnad) };});
+}
+function rrGrupp(typ, rows){
+  const m={};
+  rows.filter(t=>t.typ===typ).forEach(t=>{ const key=t.konto+" "+t.kontoNamn; m[key]=(m[key]||0)+belopp(t).netto; });
+  return Object.entries(m).map(([namn,summa])=>({namn,summa})).sort((a,b)=>b.summa-a.summa);
+}
+
+/* ============================================================ */
+/*  SVG-stapeldiagram                                          */
+/* ============================================================ */
+function chartSVG(data){
+  if(!data.length) return '<div class="empty"><div class="ic">◷</div><div>Lägg till din första verifikation för att se trenden.</div></div>';
+  const W=900,H=240,padB=28,padT=14,padL=4,padR=4;
+  const innerW=W-padL-padR, innerH=H-padB-padT, zeroY=padT+innerH/2;
+  const maxAbs=Math.max(1,...data.map(d=>Math.abs(d.resultat)));
+  const step=innerW/data.length, bw=Math.min(46, step*0.55);
+  let bars="", labels="";
+  data.forEach((d,i)=>{
+    const cx=padL+step*i+step/2;
+    const h=(Math.abs(d.resultat)/maxAbs)*(innerH/2);
+    const y=d.resultat>=0 ? zeroY-h : zeroY;
+    const fill=d.resultat>=0 ? "#2F6E4F" : "#B14A2E";
+    bars+=`<rect class="chart-bar" x="${cx-bw/2}" y="${y}" width="${bw}" height="${Math.max(1,h)}" rx="6" fill="${fill}"><title>${esc(d.namn)}: ${esc(krShort(d.resultat))}</title></rect>`;
+    labels+=`<text x="${cx}" y="${H-8}" text-anchor="middle" font-size="13" fill="#7A746A" font-family="Hanken Grotesk">${esc(d.namn)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block">
+    <line x1="${padL}" x2="${W-padR}" y1="${zeroY}" y2="${zeroY}" stroke="#E4DECE" stroke-width="1"/>
+    ${bars}${labels}</svg>`;
+}
+
+/* ============================================================ */
+/*  Tabell                                                     */
+/* ============================================================ */
+function tabell(rows, full){
+  if(!rows.length) return '<div class="empty"><div class="ic">▤</div><div>Inga verifikationer ännu. Klicka på ”Ny post”.</div></div>';
+  let body="";
+  rows.forEach(t=>{
+    const b=belopp(t);
+    body+=`<tr>
+      <td class="konto">A${t.ver}</td>
+      <td class="num" style="font-size:13px">${esc(t.datum.slice(5))}</td>
+      <td><span class="pill ${t.typ==="intakt"?"in":"ut"}">${t.typ==="intakt"?"Intäkt":"Kostnad"}</span>
+        <div class="konto" style="margin-top:5px">${esc(t.konto)} · ${esc(t.kontoNamn)}</div></td>
+      <td style="max-width:220px">${t.beskrivning?esc(t.beskrivning):'<span style="color:var(--muted)">—</span>'}</td>
+      <td class="r">${esc(kr(b.netto))}</td>
+      ${full?`<td class="r" style="color:var(--muted)">${t.momssats}%<br>${esc(kr(b.moms))}</td>`:""}
+      <td class="r" style="font-weight:500">${esc(kr(b.brutto))}</td>
+      <td class="r" style="white-space:nowrap">
+        <button class="attach ${t.kvitto?"has":""}" data-kvitto="${t.id}" title="${t.kvitto?"Visa/hantera kvitto":"Bifoga kvitto"}">📎</button>
+        <button class="del" data-del="${t.id}" title="Ta bort">🗑</button></td></tr>`;
+  });
+  return `<div style="overflow-x:auto"><table class="tbl"><thead><tr>
+    <th>Ver</th><th>Datum</th><th>Konto</th><th>Beskrivning</th>
+    <th class="r">Netto</th>${full?'<th class="r">Moms</th>':""}<th class="r">Brutto</th><th class="r">Kvitto</th>
+    </tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function kpi(label,val,sub,tone){
+  return `<div class="card"><div class="kpi-label">${esc(label)}</div>
+    <div class="kpi-val ${tone||""}">${esc(val)}</div>
+    <div class="kpi-sub">${esc(sub)}</div></div>`;
+}
+
+/* ============================================================ */
+/*  Huvudrendering                                             */
+/* ============================================================ */
+function render(){
+  if(state.year!=="alla" && !years().includes(state.year)) state.year="alla";
+  const s = co();
+  const rows = filtrerade();
+  const sum = summor(rows);
+  const periodLabel = (state.year==="alla"?"Alla år":state.year)
+    + (state.manad==="alla"?"":" · "+MAN[Number(state.manad)-1]);
+
+  const tabs = [["oversikt","Översikt"],["verifikationer","Verifikationer"],["resultat","Resultaträkning"],["moms","Moms"],["fakturor","Fakturor"]]
+    .map(([id,l])=>`<button class="tab ${state.vy===id?"on":""}" data-vy="${id}">${l}</button>`).join("");
+
+  const coOpts = state.companies.map(c=>`<option value="${c.id}" ${c.id===state.activeId?"selected":""}>${esc(c.firma)}</option>`).join("");
+  const yearOpts = ['<option value="alla">Alla år</option>']
+    .concat(years().map(y=>`<option value="${y}" ${state.year===y?"selected":""}>${y}</option>`)).join("");
+  const manadOpts = ['<option value="alla">Hela året</option>']
+    .concat(MAN.map((mn,i)=>{ const v=String(i+1).padStart(2,"0"); return `<option value="${v}" ${state.manad===v?"selected":""}>${mn}</option>`; })).join("");
+
+  let view="";
+
+  if(state.vy==="oversikt"){
+    view = `
+      <div class="grid kpis">
+        ${kpi("Intäkter", kr(sum.intakt), "exkl. moms", "pos")}
+        ${kpi("Kostnader", kr(sum.kostnad), "exkl. moms", "neg")}
+        ${kpi("Resultat", kr(sum.resultat), sum.resultat>=0?"Vinst före skatt":"Förlust", sum.resultat>=0?"pos":"neg")}
+        ${kpi("Moms", kr(Math.abs(sum.moms)), sum.moms>=0?"att betala":"att få tillbaka", sum.moms>=0?"neg":"pos")}
+      </div>
+      <div class="sec-title">Resultat per månad</div>
+      <div class="card">${chartSVG(manadsData())}</div>
+      <div class="sec-title">Senaste verifikationer</div>
+      <div class="card" style="padding:0">${tabell(rows.slice(0,6), false)}</div>`;
+  }
+  else if(state.vy==="verifikationer"){
+    view = `<div class="sec-title">Verifikationer · ${periodLabel}</div>
+      <div class="card" style="padding:0">${tabell(rows, true)}</div>`;
+  }
+  else if(state.vy==="resultat"){
+    const int=rrGrupp("intakt",rows), kost=rrGrupp("kostnad",rows);
+    view = `<div class="sec-title">Resultaträkning · ${periodLabel}</div>
+      <div class="card">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px">Rörelsens intäkter</div>
+        ${int.length?"":'<div class="note">Inga intäkter under perioden.</div>'}
+        ${int.map(r=>`<div class="rr-row"><span>${esc(r.namn)}</span><span class="num">${esc(kr(r.summa))}</span></div>`).join("")}
+        <div class="rr-row sum"><span>Summa intäkter</span><span class="num pos">${esc(kr(sum.intakt))}</span></div>
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:26px 0 10px">Rörelsens kostnader</div>
+        ${kost.length?"":'<div class="note">Inga kostnader under perioden.</div>'}
+        ${kost.map(r=>`<div class="rr-row"><span>${esc(r.namn)}</span><span class="num">−${esc(kr(r.summa))}</span></div>`).join("")}
+        <div class="rr-row sum"><span>Summa kostnader</span><span class="num neg">−${esc(kr(sum.kostnad))}</span></div>
+        <div class="rr-row total"><span class="serif">${sum.resultat>=0?"Årets resultat (vinst)":"Årets resultat (förlust)"}</span>
+          <span class="num ${sum.resultat>=0?"pos":"neg"}">${esc(kr(sum.resultat))}</span></div>
+      </div>
+      <div class="note">Resultatet visas före egenavgifter och inkomstskatt. Som enskild näringsidkare beskattas
+        resultatet i din inkomstdeklaration (NE-bilaga). Detta är ett bokföringsstöd, inte skatterådgivning.</div>`;
+  }
+  else if(state.vy==="moms"){
+    view = `<div class="sec-title">Momsrapport · ${periodLabel}</div>
+      <div class="grid kpis3">
+        ${kpi("Utgående moms", kr(sum.utMoms), "moms på försäljning", "neg")}
+        ${kpi("Ingående moms", kr(sum.inMoms), "moms på inköp", "pos")}
+        ${kpi(sum.moms>=0?"Att betala":"Att få tillbaka", kr(Math.abs(sum.moms)), "till/från Skatteverket", sum.moms>=0?"neg":"pos")}
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="rr-row"><span>Utgående moms (debiterad kund)</span><span class="num">${esc(kr(sum.utMoms))}</span></div>
+        <div class="rr-row"><span>Ingående moms (betald vid inköp)</span><span class="num">−${esc(kr(sum.inMoms))}</span></div>
+        <div class="rr-row total"><span class="serif">${sum.moms>=0?"Moms att betala":"Moms att återfå"}</span>
+          <span class="num ${sum.moms>=0?"neg":"pos"}">${esc(kr(Math.abs(sum.moms)))}</span></div>
+      </div>
+      <div class="note">Välj rätt period i menyn ovan för att stämma av mot din momsdeklaration.</div>`;
+  }
+  else if(state.vy==="fakturor"){
+    const fakt=co().fakturor.slice().sort((a,b)=>b.nr-a.nr);
+    let rowsH="";
+    fakt.forEach(f=>{
+      const b=faktBelopp(f);
+      const forfallen = f.status!=="betald" && f.forfallodatum && f.forfallodatum<idag();
+      const stPill = f.status==="betald"?'<span class="pill in">Betald</span>'
+        : forfallen?'<span class="pill ut">Förfallen</span>'
+        : f.status==="skickad"?'<span class="pill" style="background:#F3EAD2;color:#9A7A1E">Skickad</span>'
+        : '<span class="pill" style="background:#ECE9E1;color:#7A746A">Utkast</span>';
+      rowsH+=`<tr>
+        <td class="konto">${esc(String(f.nr))}</td>
+        <td class="num" style="font-size:13px">${esc(f.datum||"")}</td>
+        <td style="font-size:13px">${esc(f.forfallodatum||"")}</td>
+        <td>${esc(f.kundNamn||"—")}</td>
+        <td class="r" style="font-weight:500">${esc(kr(b.brutto))}</td>
+        <td>${stPill}</td>
+        <td class="r"><button class="btn ghost" data-faktvisa="${f.id}" style="padding:6px 12px;font-size:13px">Öppna</button></td></tr>`;
+    });
+    const tabell = fakt.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr>
+        <th>Nr</th><th>Datum</th><th>Förfaller</th><th>Kund</th><th class="r">Belopp</th><th>Status</th><th></th>
+      </tr></thead><tbody>${rowsH}</tbody></table></div>`
+      : '<div class="empty"><div class="ic">🧾</div><div>Inga fakturor ännu. Klicka på ”Ny faktura”.</div></div>';
+    view = `<div class="sec-title">Fakturor · ${esc(co().firma)}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn" id="fakt-ny">+ Ny faktura</button>
+        <button class="btn ghost" id="fakt-kunder">Kunder</button>
+        <div style="flex:1"></div>
+        <button class="btn ghost" id="fakt-info">Fakturauppgifter</button>
+      </div>
+      <div class="card" style="padding:0">${tabell}</div>
+      <div class="note">Med kontantmetoden bokförs intäkten när fakturan betalas. Markera en faktura som betald i dess vy, så skapas en intäktsverifikation automatiskt.</div>`;
+  }
+
+  document.getElementById("app").innerHTML = `
+    <div class="header">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div style="flex:1">
+          <div class="brand"><span class="firm">${esc(s.firma)}</span>${s.orgnr?`<span class="org">${esc(s.orgnr)}</span>`:""}</div>
+          <div class="tag">Löpande bokföring · enskild firma · kontantmetoden</div>
+        </div>
+        <button class="x" id="btn-inst" title="Inställningar">⚙</button>
+      </div>
+      <div class="nav">${tabs}</div>
+    </div>
+    <div class="controls">
+      ${state.companies.length>1?`<select class="select" id="sel-co" title="Företag">${coOpts}</select>`:""}
+      <select class="select" id="sel-year" title="År">${yearOpts}</select>
+      <select class="select" id="sel-man" title="Månad">${manadOpts}</select>
+      <div style="flex:1"></div>
+      <button class="btn ghost" id="btn-match">📎 Koppla kvitton</button>
+      <button class="btn ghost" id="btn-import">⭳ Importera bank-CSV</button>
+      ${state.vy==="verifikationer" && co().trans.length ? '<button class="btn ghost" id="btn-export">⭳ Exportera CSV</button>':""}
+      <button class="btn" id="btn-ny">+ Ny post</button>
+    </div>
+    ${view}`;
+
+  // Event-lyssnare
+  document.querySelectorAll("[data-vy]").forEach(b=>b.onclick=()=>{ state.vy=b.dataset.vy; render(); });
+  const selCo=document.getElementById("sel-co");
+  if(selCo) selCo.onchange=e=>{ state.activeId=e.target.value; state.year="alla"; state.manad="alla"; save(); render(); };
+  document.getElementById("sel-year").onchange = e=>{ state.year=e.target.value; render(); };
+  document.getElementById("sel-man").onchange = e=>{ state.manad=e.target.value; render(); };
+  document.getElementById("btn-ny").onclick = openNyPost;
+  document.getElementById("btn-match").onclick = openMatchKvitton;
+  document.getElementById("btn-import").onclick = openImport;
+  document.getElementById("btn-inst").onclick = openInst;
+  const exp=document.getElementById("btn-export"); if(exp) exp.onclick=exportCSV;
+  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
+    if(confirm("Ta bort denna verifikation? Eventuellt kvitto tas också bort.")){
+      Kvitton.del(b.dataset.del).catch(()=>{});
+      co().trans=co().trans.filter(t=>String(t.id)!==b.dataset.del); save(); render();
+    }
+  });
+  document.querySelectorAll("[data-kvitto]").forEach(b=>b.onclick=()=>{
+    const t=co().trans.find(x=>String(x.id)===b.dataset.kvitto);
+    if(!t) return;
+    if(t.kvitto) openKvittoViewer(t); else attachKvitto(t);
+  });
+  const fNy=document.getElementById("fakt-ny"); if(fNy) fNy.onclick=()=>openFaktura();
+  const fKund=document.getElementById("fakt-kunder"); if(fKund) fKund.onclick=openKunder;
+  const fInfo=document.getElementById("fakt-info"); if(fInfo) fInfo.onclick=openFakturaInfo;
+  document.querySelectorAll("[data-faktvisa]").forEach(b=>b.onclick=()=>{
+    const f=co().fakturor.find(x=>String(x.id)===b.dataset.faktvisa); if(f) openFakturaView(f);
+  });
+}
+
+/* ============================================================ */
+/*  Modal: Ny post                                             */
+/* ============================================================ */
+function openNyPost(){
+  let typ="kostnad", inklMoms=true;
+  const ver = co().nextVer;
+  const root = document.getElementById("modal");
+
+  function kontoOptions(t){ return KONTON[t].map((k,i)=>`<option value="${i}">${k.konto} · ${esc(k.namn)}</option>`).join(""); }
+
+  root.innerHTML = `
+   <div class="modal-bg" id="mbg">
+    <div class="modal" id="mbox">
+      <div class="modal-head"><div class="serif" style="font-size:22px">Ny verifikation <span class="konto">A${ver}</span></div>
+        <button class="x" id="m-close">✕</button></div>
+      <div class="seg" id="seg-typ" style="margin-bottom:16px">
+        <button data-typ="intakt">Intäkt</button>
+        <button data-typ="kostnad" class="on">Kostnad</button>
+      </div>
+      <div class="form-grid">
+        <div><label class="label">Datum</label><input class="input" type="date" id="f-datum" value="${idag()}" style="width:100%"></div>
+        <div><label class="label">Konto (BAS)</label><select class="select" id="f-konto" style="width:100%">${kontoOptions("kostnad")}</select></div>
+        <div style="grid-column:1/-1"><label class="label">Beskrivning</label>
+          <input class="input" type="text" id="f-besk" placeholder="t.ex. Kvitto kontorsmaterial" style="width:100%"></div>
+        <div><label class="label">Belopp</label><input class="input num" type="number" min="0" step="0.01" id="f-belopp" placeholder="0,00" style="width:100%"></div>
+        <div><label class="label">Momssats</label><select class="select" id="f-moms" style="width:100%">
+          ${[25,12,6,0].map(m=>`<option value="${m}">${m}%</option>`).join("")}</select></div>
+      </div>
+      <div class="seg" id="seg-inkl" style="margin-top:14px">
+        <button data-inkl="1" class="on">Belopp inkl. moms</button>
+        <button data-inkl="0">exkl. moms</button>
+      </div>
+      <div id="m-preview"></div>
+      <label class="label" style="margin-top:16px">Kvitto (bild eller PDF, valfritt)</label>
+      <input type="file" id="f-kvitto" accept="image/*,application/pdf" class="input" style="width:100%">
+      <div id="m-kvitto-prev"></div>
+      <div style="display:flex;gap:10px;margin-top:20px">
+        <button class="btn ghost" id="m-avbryt" style="flex:1">Avbryt</button>
+        <button class="btn" id="m-spara" style="flex:2" disabled>+ Bokför post</button>
+      </div>
+    </div></div>`;
+
+  const $=id=>document.getElementById(id);
+  // sätt standardmomssats för valt konto
+  function syncMomsFromKonto(){ const k=KONTON[typ][Number($("f-konto").value)]; $("f-moms").value=k.moms; }
+  syncMomsFromKonto();
+
+  function close(){ root.innerHTML=""; }
+  $("m-close").onclick=close; $("m-avbryt").onclick=close;
+  $("mbg").onclick=e=>{ if(e.target.id==="mbg") close(); };
+
+  document.querySelectorAll("#seg-typ button").forEach(b=>b.onclick=()=>{
+    typ=b.dataset.typ;
+    document.querySelectorAll("#seg-typ button").forEach(x=>x.classList.toggle("on", x===b));
+    $("f-konto").innerHTML=kontoOptions(typ); syncMomsFromKonto(); preview();
+  });
+  document.querySelectorAll("#seg-inkl button").forEach(b=>b.onclick=()=>{
+    inklMoms=b.dataset.inkl==="1";
+    document.querySelectorAll("#seg-inkl button").forEach(x=>x.classList.toggle("on", x===b));
+    preview();
+  });
+  $("f-konto").onchange=()=>{ syncMomsFromKonto(); preview(); };
+  ["f-belopp","f-moms"].forEach(id=>$(id).oninput=preview);
+  $("f-moms").onchange=preview;
+
+  let kvittoData=null;
+  function visaKvittoPrev(){
+    const el=$("m-kvitto-prev");
+    if(!kvittoData){ el.innerHTML=""; return; }
+    const thumb = kvittoData.type==="application/pdf"
+      ? `<div class="pdf">PDF</div>`
+      : `<img src="${kvittoData.dataUrl}" alt="">`;
+    el.innerHTML=`<div class="kvitto-prev">${thumb}
+      <div style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(kvittoData.name)}</div>
+      <button class="del" id="m-kvitto-bort" title="Ta bort kvitto">🗑</button></div>`;
+    $("m-kvitto-bort").onclick=()=>{ kvittoData=null; $("f-kvitto").value=""; visaKvittoPrev(); };
+  }
+  $("f-kvitto").onchange=async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    try{ kvittoData=await processKvitto(f); visaKvittoPrev(); }
+    catch(err){ alert(err.message||"Kunde inte läsa filen."); $("f-kvitto").value=""; }
+  };
+
+  function preview(){
+    const inp=Number($("f-belopp").value)||0, ms=Number($("f-moms").value);
+    const b=belopp({beloppInput:inp, momssats:ms, inklMoms});
+    const giltig=inp>0;
+    $("m-spara").disabled=!giltig;
+    $("m-preview").innerHTML = giltig ? `<div class="card" style="margin-top:16px;background:#fff">
+        <div class="rr-row" style="padding:4px 0"><span>Netto</span><span class="num">${esc(kr(b.netto))}</span></div>
+        <div class="rr-row" style="padding:4px 0"><span>Moms (${ms}%)</span><span class="num">${esc(kr(b.moms))}</span></div>
+        <div class="rr-row" style="padding:4px 0;font-weight:600"><span>Brutto</span><span class="num">${esc(kr(b.brutto))}</span></div>
+      </div>` : "";
+  }
+
+  $("m-spara").onclick=async ()=>{
+    const inp=Number($("f-belopp").value)||0; if(inp<=0) return;
+    const k=KONTON[typ][Number($("f-konto").value)];
+    const id=Date.now();
+    const t={
+      id, ver:co().nextVer, datum:$("f-datum").value||idag(),
+      typ, konto:k.konto, kontoNamn:k.namn, beskrivning:$("f-besk").value.trim(),
+      beloppInput:inp, inklMoms, momssats:Number($("f-moms").value),
+    };
+    if(kvittoData){
+      try{ await Kvitton.put({ id:String(id), name:kvittoData.name, type:kvittoData.type, dataUrl:kvittoData.dataUrl });
+        t.kvitto=true; t.kvittoNamn=kvittoData.name; }
+      catch(err){ alert(err.message); }
+    }
+    co().trans.push(t);
+    co().nextVer++; save(); close(); render();
+  };
+}
+
+/* ============================================================ */
+/*  Kvitto: bifoga & visa                                      */
+/* ============================================================ */
+function attachKvitto(t){
+  const inp=document.createElement("input");
+  inp.type="file"; inp.accept="image/*,application/pdf";
+  inp.onchange=async ()=>{
+    const f=inp.files[0]; if(!f) return;
+    try{
+      const k=await processKvitto(f);
+      await Kvitton.put({ id:String(t.id), name:k.name, type:k.type, dataUrl:k.dataUrl });
+      t.kvitto=true; t.kvittoNamn=k.name; save(); render();
+    }catch(err){ alert(err.message||"Kunde inte spara kvittot."); }
+  };
+  inp.click();
+}
+
+async function openKvittoViewer(t){
+  const root=document.getElementById("modal");
+  const rec=await Kvitton.get(String(t.id));
+  if(!rec){
+    if(confirm("Kvittot kunde inte hittas. Vill du bifoga ett nytt?")){ t.kvitto=false; save(); attachKvitto(t); }
+    else { t.kvitto=false; save(); render(); }
+    return;
+  }
+  const view = rec.type==="application/pdf"
+    ? `<embed src="${rec.dataUrl}" type="application/pdf" style="width:100%;height:64vh;border:1px solid var(--line);border-radius:12px">`
+    : `<img src="${rec.dataUrl}" alt="" style="width:100%;border-radius:12px;border:1px solid var(--line)">`;
+  root.innerHTML=`
+   <div class="modal-bg" id="kvbg"><div class="modal" style="max-width:680px">
+     <div class="modal-head"><div class="serif" style="font-size:20px">Kvitto · A${t.ver}</div>
+       <button class="x" id="kv-close">✕</button></div>
+     <div class="konto" style="margin-bottom:12px">${esc(rec.name)}</div>
+     ${view}
+     <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
+       <a class="btn ghost" href="${rec.dataUrl}" download="${esc(rec.name)}" style="flex:1;text-decoration:none;justify-content:center">⭳ Ladda ner</a>
+       <button class="btn ghost" id="kv-byt" style="flex:1">Byt ut</button>
+       <button class="btn" id="kv-bort" style="flex:1;background:var(--clay);border-color:var(--clay)">Ta bort</button>
+     </div>
+   </div></div>`;
+  const close=()=>root.innerHTML="";
+  document.getElementById("kv-close").onclick=close;
+  document.getElementById("kvbg").onclick=e=>{ if(e.target.id==="kvbg") close(); };
+  document.getElementById("kv-byt").onclick=()=>{ close(); attachKvitto(t); };
+  document.getElementById("kv-bort").onclick=async ()=>{
+    if(!confirm("Ta bort kvittot? Verifikationen finns kvar.")) return;
+    await Kvitton.del(String(t.id)); t.kvitto=false; delete t.kvittoNamn; save(); close(); render();
+  };
+}
+
+/* ============================================================ */
+/*  Koppla kvitton automatiskt till bankhändelser (OCR)        */
+/* ============================================================ */
+let _tessP=null;
+function loadTesseract(){
+  if(window.Tesseract) return Promise.resolve(window.Tesseract);
+  if(_tessP) return _tessP;
+  _tessP=new Promise((res,rej)=>{
+    const sc=document.createElement("script");
+    sc.src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    sc.onload=()=>res(window.Tesseract);
+    sc.onerror=()=>{ _tessP=null; rej(new Error("Kunde inte ladda OCR-biblioteket (kräver internet).")); };
+    document.head.appendChild(sc);
+  });
+  return _tessP;
+}
+async function ocrText(dataUrl){
+  const T=await loadTesseract();
+  const { data } = await T.recognize(dataUrl, "swe+eng");
+  return (data && data.text) || "";
+}
+function extractAmounts(text){
+  const out=[]; const re=/(\d{1,3}(?:[ .\u00a0]\d{3})*(?:[.,]\d{2}))/g; let m;
+  while((m=re.exec(text))){ const n=parseBelopp(m[1]); if(!isNaN(n)&&n>0) out.push(n); }
+  return out;
+}
+function preferredTotal(text){
+  const all=extractAmounts(text);
+  let best=null;
+  text.split(/\n/).forEach(l=>{ if(/total|summa|att\s*betala|betala|totalt|belopp/i.test(l)){
+    extractAmounts(l).forEach(x=>{ if(best==null||x>best) best=x; }); }});
+  return best!=null ? best : (all.length? Math.max(...all): null);
+}
+function extractDate(text){
+  const m=text.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/) || text.match(/(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})/);
+  return m ? parseDatum(m[0]) : null;
+}
+function rankMatches(amount, datum, txs){
+  return txs.map(t=>{
+    const b=belopp(t).brutto; let score=0;
+    if(amount!=null){
+      if(Math.abs(b-amount)<=0.5) score+=100;
+      else if(Math.abs(b-amount)<=Math.max(1,b*0.01)) score+=60;
+    }
+    if(datum){ const dd=Math.abs((new Date(datum)-new Date(t.datum))/86400000);
+      if(dd<=2) score+=20; else if(dd<=7) score+=10; else if(dd<=31) score+=3; }
+    return { t, score };
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+}
+
+function openMatchKvitton(){
+  const root=document.getElementById("modal");
+  const $=id=>document.getElementById(id);
+  let receipts=[]; // {name,type,dataUrl,amount,datum,ocrOk}
+  root.innerHTML=`
+   <div class="modal-bg" id="mkbg"><div class="modal" style="max-width:820px">
+     <div class="modal-head"><div class="serif" style="font-size:22px">Koppla kvitton</div>
+       <button class="x" id="mk-close">✕</button></div>
+     <div id="match-body">
+       <p class="note" style="margin-top:0">Ladda upp ett eller flera kvitton (foto eller PDF). Appen läser av belopp och datum med OCR och föreslår automatiskt den bankhändelse som matchar. PDF kopplas manuellt. Du bekräftar alltid innan något sparas.</p>
+       <input type="file" id="mk-file" accept="image/*,application/pdf" multiple class="input" style="width:100%">
+       <div style="display:flex;gap:10px;margin-top:16px">
+         <button class="btn ghost" id="mk-avbryt" style="flex:1">Avbryt</button>
+         <button class="btn" id="mk-las" style="flex:1">Läs av →</button>
+       </div>
+     </div>
+   </div></div>`;
+  const close=()=>root.innerHTML="";
+  $("mk-close").onclick=close; $("mk-avbryt").onclick=close;
+  $("mkbg").onclick=e=>{ if(e.target.id==="mkbg") close(); };
+
+  $("mk-las").onclick=async ()=>{
+    const files=Array.from(($("mk-file").files)||[]);
+    if(!files.length){ alert("Välj minst ett kvitto."); return; }
+    receipts=[];
+    for(let i=0;i<files.length;i++){
+      $("match-body").innerHTML=`<p class="note">Bearbetar kvitto ${i+1} av ${files.length}…<br>${esc(files[i].name)}</p>`;
+      let r;
+      try{ r=await processKvitto(files[i]); }catch(e){ continue; }
+      const entry={ name:r.name, type:r.type, dataUrl:r.dataUrl, amount:null, datum:null, ocrOk:false };
+      if(r.type!=="application/pdf"){
+        try{ const txt=await ocrText(r.dataUrl); entry.amount=preferredTotal(txt); entry.datum=extractDate(txt); entry.ocrOk=true; }
+        catch(e){ entry.ocrErr=e.message; }
+      }
+      receipts.push(entry);
+    }
+    granska();
+  };
+
+  function granska(){
+    if(!receipts.length){ $("match-body").innerHTML=`<p class="note">Inga kvitton kunde läsas.</p>
+      <div style="display:flex;gap:10px;margin-top:16px"><button class="btn ghost" id="mk-tillbaka" style="flex:1">← Tillbaka</button></div>`;
+      $("mk-tillbaka").onclick=openMatchKvitton; return; }
+    const kandidater=co().trans.filter(t=>!t.kvitto);
+    if(!kandidater.length){ $("match-body").innerHTML=`<p class="note">Alla verifikationer för ${esc(co().firma)} har redan kvitto. Ta bort ett befintligt kvitto först om du vill byta.</p>
+      <div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="mk-stang" style="flex:1">Stäng</button></div>`;
+      $("mk-stang").onclick=close; return; }
+
+    const optFor=(selId)=>`<option value="">— hoppa över —</option>`+
+      kandidater.slice().sort((a,b)=> a.datum<b.datum?1:-1).map(t=>{
+        const b=belopp(t).brutto;
+        return `<option value="${t.id}" ${String(t.id)===String(selId)?"selected":""}>A${t.ver} · ${esc(t.datum)} · ${esc(kr(b))} · ${esc((t.beskrivning||t.kontoNamn||"").slice(0,28))}</option>`;
+      }).join("");
+
+    let rowsH="", anyAuto=0;
+    receipts.forEach((r,idx)=>{
+      const matches=rankMatches(r.amount, r.datum, kandidater);
+      const best=matches[0];
+      const auto = best && best.score>=100 && (matches.length<2 || matches[1].score<100);
+      if(auto) anyAuto++;
+      const sel = best ? best.t.id : "";
+      const thumb = r.type==="application/pdf"
+        ? `<div style="width:46px;height:46px;display:flex;align-items:center;justify-content:center;background:var(--clay-soft);color:var(--clay);border-radius:8px;font-size:10px;font-weight:700">PDF</div>`
+        : `<img src="${r.dataUrl}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
+      const avlast = r.type==="application/pdf" ? '<span style="color:var(--muted)">PDF – välj manuellt</span>'
+        : (r.ocrOk ? `${r.amount!=null?esc(kr(r.amount)):'<span style="color:var(--muted)">belopp ej funnet</span>'}${r.datum?" · "+esc(r.datum):""}`
+                   : '<span style="color:var(--clay)">OCR misslyckades</span>');
+      rowsH+=`<tr data-ri="${idx}">
+        <td>${thumb}</td>
+        <td style="font-size:13px">${avlast}${auto?'<div class="pill in" style="margin-top:6px">Auto-matchad</div>':''}</td>
+        <td><select class="select mk-sel" style="padding:8px;font-size:13px;width:100%;min-width:230px">${optFor(sel)}</select></td></tr>`;
+    });
+
+    $("match-body").innerHTML=`
+      <p class="note" style="margin-top:0">${receipts.length} kvitton avlästa, varav ${anyAuto} auto-matchade. Kontrollera förslagen och justera vid behov.</p>
+      <div style="overflow:auto;max-height:48vh;border:1px solid var(--line);border-radius:12px">
+        <table class="tbl"><thead><tr><th>Kvitto</th><th>Avläst</th><th>Koppla till bankhändelse</th></tr></thead>
+        <tbody id="mk-rows">${rowsH}</tbody></table>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn ghost" id="mk-tillbaka" style="flex:1">← Tillbaka</button>
+        <button class="btn" id="mk-koppla" style="flex:2">Koppla valda kvitton</button>
+      </div>`;
+    $("mk-tillbaka").onclick=openMatchKvitton;
+    $("mk-koppla").onclick=async ()=>{
+      let n=0, krockar=[];
+      const rows=Array.from(document.querySelectorAll("#mk-rows tr"));
+      const valda={};
+      for(const tr of rows){
+        const sel=tr.querySelector(".mk-sel"); const txId=sel.value; if(!txId) continue;
+        if(valda[txId]){ krockar.push(txId); continue; } // samma verifikation vald två gånger
+        valda[txId]=true;
+        const r=receipts[Number(tr.dataset.ri)];
+        const t=co().trans.find(x=>String(x.id)===String(txId)); if(!t) continue;
+        try{ await Kvitton.put({ id:String(t.id), name:r.name, type:r.type, dataUrl:r.dataUrl });
+          t.kvitto=true; t.kvittoNamn=r.name; n++; }catch(e){ alert(e.message); }
+      }
+      save(); close(); render();
+      alert(n+" kvitton kopplades."+(krockar.length?"\n\nObs: "+krockar.length+" rad(er) pekade på en redan vald verifikation och hoppades över.":""));
+    };
+  }
+}
+
+/* ============================================================ */
+/*  Fakturor                                                   */
+/* ============================================================ */
+function faktBelopp(f){
+  let netto=0, moms=0; const perRate={};
+  (f.rader||[]).forEach(r=>{ const n=(Number(r.antal)||0)*(Number(r.aPris)||0); const rt=Number(r.moms)||0;
+    netto+=n; moms+=n*rt/100; perRate[rt]=(perRate[rt]||0)+n; });
+  return { netto, moms, brutto:netto+moms, perRate };
+}
+function addDays(dateStr, days){ const d=new Date((dateStr||idag())+"T00:00:00"); d.setDate(d.getDate()+(Number(days)||0)); return d.toISOString().slice(0,10); }
+
+function openFaktura(existing){
+  const root=document.getElementById("modal"); const $=id=>document.getElementById(id);
+  let rader = existing && existing.rader && existing.rader.length
+    ? existing.rader.map(r=>Object.assign({},r))
+    : [{benamning:"",antal:1,aPris:"",moms:25}];
+  const kundOpts = `<option value="">— välj sparad kund —</option>`+
+    co().kunder.map(k=>`<option value="${k.id}">${esc(k.namn)}</option>`).join("");
+  const nr = existing ? existing.nr : co().nextFaktNr;
+  const e = existing || {};
+  root.innerHTML=`
+   <div class="modal-bg" id="fbg"><div class="modal" style="max-width:740px">
+     <div class="modal-head"><div class="serif" style="font-size:22px">${existing?"Redigera":"Ny"} faktura <span class="konto">nr ${esc(String(nr))}</span></div>
+       <button class="x" id="f-close">✕</button></div>
+     <label class="label">Kund</label>
+     <select class="select" id="f-kund" style="width:100%;margin-bottom:10px">${kundOpts}</select>
+     <div class="form-grid">
+       <div><label class="label">Kundnamn</label><input class="input" id="f-knamn" value="${esc(e.kundNamn||"")}" style="width:100%"></div>
+       <div><label class="label">E-post</label><input class="input" id="f-kepost" value="${esc(e.kundEpost||"")}" placeholder="kund@exempel.se" style="width:100%"></div>
+       <div style="grid-column:1/-1"><label class="label">Adress</label><input class="input" id="f-kadress" value="${esc(e.kundAdress||"")}" style="width:100%"></div>
+       <div><label class="label">Postnr & ort</label><input class="input" id="f-kpostort" value="${esc(e.kundPostort||"")}" style="width:100%"></div>
+       <div><label class="label">Org.nr (valfritt)</label><input class="input" id="f-korgnr" value="${esc(e.kundOrgnr||"")}" style="width:100%"></div>
+     </div>
+     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;cursor:pointer">
+       <input type="checkbox" id="f-sparakund" ${existing?"":"checked"}> Spara kunden i kundregistret</label>
+     <div class="form-grid" style="margin-top:14px">
+       <div><label class="label">Fakturadatum</label><input class="input" id="f-datum" type="date" value="${esc(e.datum||idag())}" style="width:100%"></div>
+       <div><label class="label">Betalningsvillkor (dagar)</label><input class="input" id="f-dagar" type="number" min="0" value="${e.forfallodatum&&e.datum?Math.round((new Date(e.forfallodatum)-new Date(e.datum))/86400000):30}" style="width:100%"></div>
+     </div>
+     <label class="label" style="margin-top:16px">Rader</label>
+     <div style="overflow-x:auto"><table class="tbl"><thead><tr>
+       <th>Beskrivning</th><th>Antal</th><th>À-pris (exkl. moms)</th><th>Moms</th><th class="r">Belopp</th><th></th>
+     </tr></thead><tbody id="f-rader"></tbody></table></div>
+     <button class="btn ghost" id="f-addrad" style="margin-top:8px">+ Lägg till rad</button>
+     <div id="f-tot" style="margin-top:14px"></div>
+     <label class="label" style="margin-top:14px">Meddelande (valfritt)</label>
+     <input class="input" id="f-medd" value="${esc(e.meddelande||"")}" placeholder="t.ex. Tack för ditt förtroende" style="width:100%">
+     <div style="display:flex;gap:10px;margin-top:20px">
+       <button class="btn ghost" id="f-avbryt" style="flex:1">Avbryt</button>
+       <button class="btn" id="f-spara" style="flex:2">Spara faktura</button>
+     </div>
+   </div></div>`;
+  const close=()=>root.innerHTML="";
+  $("f-close").onclick=close; $("f-avbryt").onclick=close;
+  $("fbg").onclick=ev=>{ if(ev.target.id==="fbg") close(); };
+
+  $("f-kund").onchange=()=>{ const k=co().kunder.find(x=>x.id===$("f-kund").value); if(!k) return;
+    $("f-knamn").value=k.namn||""; $("f-kepost").value=k.epost||""; $("f-kadress").value=k.adress||""; $("f-kpostort").value=k.postort||""; $("f-korgnr").value=k.orgnr||""; };
+
+  function uppdateraTot(){
+    const b=faktBelopp({rader});
+    const momsRader=Object.keys(b.perRate).filter(r=>Number(r)>0).map(r=>`<div class="rr-row" style="padding:4px 0"><span>Moms ${r}%</span><span class="num">${esc(kr(b.perRate[r]*Number(r)/100))}</span></div>`).join("");
+    $("f-tot").innerHTML=`<div class="card" style="background:#fff">
+      <div class="rr-row" style="padding:4px 0"><span>Netto</span><span class="num">${esc(kr(b.netto))}</span></div>
+      ${momsRader}
+      <div class="rr-row" style="padding:4px 0;font-weight:600"><span>Att betala</span><span class="num">${esc(kr(b.brutto))}</span></div></div>`;
+  }
+  function renderRader(){
+    $("f-rader").innerHTML=rader.map((r,i)=>`<tr>
+      <td><input class="input fr-b" data-i="${i}" value="${esc(r.benamning||"")}" placeholder="Beskrivning" style="width:100%;padding:7px;min-width:140px"></td>
+      <td><input class="input fr-a" data-i="${i}" type="number" min="0" step="any" value="${r.antal!=null?r.antal:1}" style="width:64px;padding:7px"></td>
+      <td><input class="input fr-p" data-i="${i}" type="number" min="0" step="0.01" value="${r.aPris!=null?r.aPris:""}" placeholder="0" style="width:96px;padding:7px"></td>
+      <td><select class="select fr-m" data-i="${i}" style="padding:7px">${[25,12,6,0].map(m=>`<option value="${m}" ${Number(r.moms)===m?"selected":""}>${m}%</option>`).join("")}</select></td>
+      <td class="r fr-sum" style="white-space:nowrap">${esc(kr((Number(r.antal)||0)*(Number(r.aPris)||0)))}</td>
+      <td><button class="del fr-del" data-i="${i}">🗑</button></td></tr>`).join("");
+    const upd=el=>{ const tr=el.closest("tr"); const i=+el.dataset.i; tr.querySelector(".fr-sum").textContent=kr((Number(rader[i].antal)||0)*(Number(rader[i].aPris)||0)); uppdateraTot(); };
+    $("f-rader").querySelectorAll(".fr-b").forEach(el=>el.oninput=()=>{ rader[+el.dataset.i].benamning=el.value; });
+    $("f-rader").querySelectorAll(".fr-a").forEach(el=>el.oninput=()=>{ rader[+el.dataset.i].antal=el.value; upd(el); });
+    $("f-rader").querySelectorAll(".fr-p").forEach(el=>el.oninput=()=>{ rader[+el.dataset.i].aPris=el.value; upd(el); });
+    $("f-rader").querySelectorAll(".fr-m").forEach(el=>el.onchange=()=>{ rader[+el.dataset.i].moms=Number(el.value); uppdateraTot(); });
+    $("f-rader").querySelectorAll(".fr-del").forEach(el=>el.onclick=()=>{ rader.splice(+el.dataset.i,1); if(!rader.length)rader.push({benamning:"",antal:1,aPris:"",moms:25}); renderRader(); uppdateraTot(); });
+  }
+  $("f-addrad").onclick=()=>{ rader.push({benamning:"",antal:1,aPris:"",moms:25}); renderRader(); uppdateraTot(); };
+  renderRader(); uppdateraTot();
+
+  $("f-spara").onclick=()=>{
+    const namn=$("f-knamn").value.trim();
+    if(!namn){ alert("Ange kundens namn."); return; }
+    const gilt=rader.filter(r=>(r.benamning||"").trim()!=="" || (Number(r.aPris)||0)>0);
+    if(!gilt.length){ alert("Lägg till minst en rad med belopp."); return; }
+    const datum=$("f-datum").value||idag(); const dagar=Number($("f-dagar").value)||0;
+    const obj = existing || { id:"f"+Date.now()+Math.floor(Math.random()*1e6), nr:co().nextFaktNr, status:"utkast" };
+    if(!existing) co().nextFaktNr++;
+    Object.assign(obj, {
+      datum, forfallodatum:addDays(datum,dagar),
+      kundNamn:namn, kundEpost:$("f-kepost").value.trim(), kundAdress:$("f-kadress").value.trim(),
+      kundPostort:$("f-kpostort").value.trim(), kundOrgnr:$("f-korgnr").value.trim(),
+      meddelande:$("f-medd").value.trim(),
+      rader: gilt.map(r=>({ benamning:(r.benamning||"").trim(), antal:Number(r.antal)||0, aPris:Number(r.aPris)||0, moms:Number(r.moms)||0 })),
+    });
+    if($("f-sparakund").checked && namn){
+      const finns=co().kunder.some(k=>k.namn===namn && (k.epost||"")===obj.kundEpost);
+      if(!finns) co().kunder.push({ id:"k"+Date.now()+Math.floor(Math.random()*1e6), namn, epost:obj.kundEpost, adress:obj.kundAdress, postort:obj.kundPostort, orgnr:obj.kundOrgnr });
+    }
+    if(!existing) co().fakturor.push(obj);
+    save(); close(); state.vy="fakturor"; render(); openFakturaView(obj);
+  };
+}
+
+function markeraBetald(f, datum){
+  const b=faktBelopp(f); const created=[];
+  const rates=Object.keys(b.perRate);
+  (rates.length?rates:["0"]).forEach(rs=>{
+    const r=Number(rs); const net=b.perRate[rs]||0; if(net<=0 && rates.length) return;
+    const brutto=net*(1+r/100);
+    const konto = r===25?"3001": r===12?"3002": r===6?"3003":"3004";
+    const id=Date.now()+Math.floor(Math.random()*1e6);
+    co().trans.push({ id, ver:co().nextVer++, datum, typ:"intakt", konto,
+      kontoNamn:(KONTON.intakt.find(k=>k.konto===konto)||{}).namn||"Försäljning",
+      beskrivning:"Faktura "+f.nr+(f.kundNamn?" – "+f.kundNamn:""), beloppInput:brutto, inklMoms:true, momssats:r, fromFaktura:f.id });
+    created.push(id);
+  });
+  f.status="betald"; f.betaldDatum=datum; f.betaldVerId=created;
+}
+function angraBetald(f){
+  (f.betaldVerId||[]).forEach(id=>{ co().trans=co().trans.filter(t=>t.id!==id); });
+  f.betaldVerId=[]; f.betaldDatum=null; f.status="skickad";
+}
+
+function openFakturaView(f){
+  const root=document.getElementById("modal"); const b=faktBelopp(f);
+  const forfallen = f.status!=="betald" && f.forfallodatum && f.forfallodatum<idag();
+  const stTxt = f.status==="betald"?("Betald "+(f.betaldDatum||"")) : forfallen?"Förfallen" : f.status==="skickad"?"Skickad":"Utkast";
+  const radH=(f.rader||[]).map(r=>{ const n=(Number(r.antal)||0)*(Number(r.aPris)||0);
+    return `<div class="rr-row" style="padding:6px 0"><span>${esc(r.benamning||"")} <span class="konto">${esc((r.antal||0)+" × "+kr(r.aPris||0)+" · "+(r.moms||0)+"%")}</span></span><span class="num">${esc(kr(n))}</span></div>`; }).join("");
+  root.innerHTML=`
+   <div class="modal-bg" id="fvbg"><div class="modal" style="max-width:600px">
+     <div class="modal-head"><div class="serif" style="font-size:22px">Faktura ${esc(String(f.nr))} · <span style="font-size:15px;color:var(--muted)">${esc(stTxt)}</span></div>
+       <button class="x" id="fv-close">✕</button></div>
+     <div class="card" style="background:#fff">
+       <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:10px">
+         <div><div class="konto">Kund</div>${esc(f.kundNamn||"—")}</div>
+         <div style="text-align:right"><div class="konto">Datum / förfaller</div>${esc(f.datum||"")} / ${esc(f.forfallodatum||"")}</div>
+       </div>
+       ${radH}
+       <div class="rr-row total"><span class="serif">Att betala</span><span class="num">${esc(kr(b.brutto))}</span></div>
+     </div>
+     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+       <button class="btn ghost" id="fv-pdf" style="flex:1">🖨 Skriv ut / PDF</button>
+       <button class="btn ghost" id="fv-mail" style="flex:1">✉ Skapa mejl</button>
+     </div>
+     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+       ${f.status==="betald"
+         ? `<button class="btn ghost" id="fv-unpaid" style="flex:1">Ångra betald</button>`
+         : `<button class="btn" id="fv-paid" style="flex:1">Markera betald</button>`}
+       <button class="btn ghost" id="fv-edit" style="flex:1">Redigera</button>
+       <button class="btn ghost" id="fv-del" style="flex:1;color:var(--clay)">Ta bort</button>
+     </div>
+     ${f.status==="betald"?`<div class="note">Bokförd som intäkt (${(f.betaldVerId||[]).length} verifikation${(f.betaldVerId||[]).length===1?"":"er"}) den ${esc(f.betaldDatum||"")}. "Ångra betald" tar bort dessa verifikationer.</div>`:""}
+   </div></div>`;
+  const close=()=>root.innerHTML="";
+  document.getElementById("fv-close").onclick=close;
+  document.getElementById("fvbg").onclick=ev=>{ if(ev.target.id==="fvbg") close(); };
+  document.getElementById("fv-pdf").onclick=()=>printFaktura(f);
+  document.getElementById("fv-mail").onclick=()=>{ if(f.status==="utkast"){ f.status="skickad"; save(); } mailtoFaktura(f); };
+  document.getElementById("fv-edit").onclick=()=>{ close(); openFaktura(f); };
+  document.getElementById("fv-del").onclick=()=>{ if(!confirm("Ta bort fakturan?")) return;
+    if(f.status==="betald") angraBetald(f);
+    co().fakturor=co().fakturor.filter(x=>x.id!==f.id); save(); close(); render(); };
+  const paid=document.getElementById("fv-paid");
+  if(paid) paid.onclick=()=>{ const d=prompt("Betaldatum (ÅÅÅÅ-MM-DD):", idag()); if(d===null) return;
+    const dd=parseDatum(d)||idag(); markeraBetald(f, dd); save(); render(); openFakturaView(f);
+    alert("Fakturan bokfördes som intäkt på "+dd+"."); };
+  const unpaid=document.getElementById("fv-unpaid");
+  if(unpaid) unpaid.onclick=()=>{ if(!confirm("Ångra betald och ta bort den skapade intäktsverifikationen?")) return;
+    angraBetald(f); save(); render(); openFakturaView(f); };
+}
+
+function mailtoFaktura(f){
+  const b=faktBelopp(f); const c=co(); const fi=c.fakturaInfo||{};
+  const subj=encodeURIComponent("Faktura "+f.nr+" – "+c.firma);
+  const body=encodeURIComponent(
+    "Hej"+(f.kundNamn?" "+f.kundNamn.split(" ")[0]:"")+",\n\n"+
+    "Bifogat finner du faktura "+f.nr+" på "+kr(b.brutto)+".\n"+
+    "Förfallodatum: "+(f.forfallodatum||"")+".\n"+
+    (fi.bankgiro?"Betalas till bankgiro "+fi.bankgiro+".\n":"")+
+    (fi.iban?"IBAN: "+fi.iban+".\n":"")+
+    "\n(Kom ihåg att bifoga fakturans PDF innan du skickar.)\n\n"+
+    "Vänliga hälsningar,\n"+c.firma);
+  window.location.href="mailto:"+encodeURIComponent(f.kundEpost||"")+"?subject="+subj+"&body="+body;
+}
+
+const FAKT_CSS=`*{box-sizing:border-box;margin:0;padding:0;} body{font-family:'Helvetica Neue',Arial,sans-serif;color:#1a1a17;padding:40px;font-size:13px;line-height:1.5;}
+.fk-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:34px;} .fk-firm{font-size:22px;font-weight:700;} .fk-h{font-size:28px;font-weight:700;}
+.fk-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#999;margin-bottom:3px;} .fk-r{text-align:right;}
+.fk-box{margin-bottom:22px;} table.fk-items{width:100%;border-collapse:collapse;margin:16px 0;}
+table.fk-items th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#999;border-bottom:1.5px solid #1a1a17;padding:8px 6px;}
+table.fk-items td{padding:9px 6px;border-bottom:1px solid #e8e5dc;} .fk-tot{margin-left:auto;width:280px;margin-top:10px;}
+.fk-tot .row{display:flex;justify-content:space-between;padding:5px 0;} .fk-tot .grand{border-top:2px solid #1a1a17;margin-top:6px;padding-top:10px;font-size:17px;font-weight:700;}
+.fk-pay{margin-top:30px;padding:16px;background:#f6f4ee;border-radius:8px;display:flex;gap:28px;flex-wrap:wrap;}
+.fk-foot{margin-top:36px;padding-top:14px;border-top:1px solid #e8e5dc;font-size:11px;color:#999;display:flex;gap:22px;flex-wrap:wrap;} @media print{body{padding:0;}}`;
+
+function fakturaHTML(f){
+  const c=co(); const fi=c.fakturaInfo||{}; const b=faktBelopp(f);
+  const rader=(f.rader||[]).map(r=>{ const n=(Number(r.antal)||0)*(Number(r.aPris)||0);
+    return `<tr><td>${esc(r.benamning||"")}</td><td class="fk-r">${esc(String(r.antal||0))}</td><td class="fk-r">${esc(kr(r.aPris||0))}</td><td class="fk-r">${esc((Number(r.moms)||0)+"%")}</td><td class="fk-r">${esc(kr(n))}</td></tr>`; }).join("");
+  const momsRader=Object.keys(b.perRate).filter(r=>Number(r)>0).map(r=>`<div class="row"><span>Moms ${r}%</span><span>${esc(kr(b.perRate[r]*Number(r)/100))}</span></div>`).join("");
+  return `<div class="fk-top">
+    <div><div class="fk-firm">${esc(c.firma)}</div>
+      <div style="color:#666;margin-top:4px">${esc(fi.adress||"")}${(fi.postnr||fi.ort)?"<br>"+esc((fi.postnr||"")+" "+(fi.ort||"")):""}${fi.epost?"<br>"+esc(fi.epost):""}${fi.telefon?"<br>"+esc(fi.telefon):""}</div></div>
+    <div style="text-align:right"><div class="fk-h">FAKTURA</div>
+      <div style="margin-top:10px"><div class="fk-label">Fakturanr</div>${esc(String(f.nr))}</div>
+      <div style="margin-top:8px"><div class="fk-label">Fakturadatum</div>${esc(f.datum||"")}</div>
+      <div style="margin-top:8px"><div class="fk-label">Förfallodatum</div>${esc(f.forfallodatum||"")}</div></div></div>
+   <div class="fk-box"><div class="fk-label">Faktureras till</div>
+     <div style="font-weight:600">${esc(f.kundNamn||"")}</div>
+     <div style="color:#666">${esc(f.kundAdress||"")}${f.kundPostort?"<br>"+esc(f.kundPostort):""}${f.kundOrgnr?"<br>Org.nr "+esc(f.kundOrgnr):""}</div></div>
+   <table class="fk-items"><thead><tr><th>Beskrivning</th><th class="fk-r">Antal</th><th class="fk-r">À-pris</th><th class="fk-r">Moms</th><th class="fk-r">Belopp</th></tr></thead><tbody>${rader}</tbody></table>
+   <div class="fk-tot"><div class="row"><span>Netto</span><span>${esc(kr(b.netto))}</span></div>${momsRader}<div class="row grand"><span>Att betala</span><span>${esc(kr(b.brutto))}</span></div></div>
+   ${f.meddelande?`<div style="margin-top:22px"><div class="fk-label">Meddelande</div>${esc(f.meddelande)}</div>`:""}
+   <div class="fk-pay">${fi.bankgiro?`<div><div class="fk-label">Bankgiro</div>${esc(fi.bankgiro)}</div>`:""}${fi.iban?`<div><div class="fk-label">IBAN</div>${esc(fi.iban)}</div>`:""}<div><div class="fk-label">Förfallodatum</div>${esc(f.forfallodatum||"")}</div><div><div class="fk-label">Att betala</div>${esc(kr(b.brutto))}</div></div>
+   <div class="fk-foot">${c.orgnr?`<div>Org./personnr: ${esc(c.orgnr)}</div>`:""}${fi.momsnr?`<div>Momsreg.nr: ${esc(fi.momsnr)}</div>`:""}${fi.fskatt?`<div>Godkänd för F-skatt</div>`:""}</div>`;
+}
+function printFaktura(f){
+  const w=window.open("","_blank","width=800,height=950");
+  if(!w){ alert("Tillåt popup-fönster för att skriva ut eller spara som PDF."); return; }
+  w.document.open();
+  w.document.write("<!doctype html><html lang=sv><head><meta charset=utf-8><title>Faktura "+esc(String(f.nr))+"</title><style>"+FAKT_CSS+"</style></head><body>"+fakturaHTML(f)+"</body></html>");
+  w.document.close(); w.focus();
+  setTimeout(()=>{ try{ w.print(); }catch(e){} }, 400);
+}
+
+function openKunder(){
+  const root=document.getElementById("modal"); const $=id=>document.getElementById(id);
+  function rita(){
+    const lista = co().kunder.length
+      ? co().kunder.map(k=>`<div class="rr-row"><span>${esc(k.namn)}${k.epost?` <span class="konto">${esc(k.epost)}</span>`:""}</span><button class="del" data-kdel="${k.id}">🗑</button></div>`).join("")
+      : '<div class="note">Inga sparade kunder ännu.</div>';
+    root.innerHTML=`
+     <div class="modal-bg" id="kubg"><div class="modal" style="max-width:540px">
+       <div class="modal-head"><div class="serif" style="font-size:22px">Kunder</div><button class="x" id="ku-close">✕</button></div>
+       <div class="form-grid">
+         <div><label class="label">Namn</label><input class="input" id="ku-namn" style="width:100%"></div>
+         <div><label class="label">E-post</label><input class="input" id="ku-epost" style="width:100%"></div>
+         <div style="grid-column:1/-1"><label class="label">Adress</label><input class="input" id="ku-adress" style="width:100%"></div>
+         <div><label class="label">Postnr & ort</label><input class="input" id="ku-postort" style="width:100%"></div>
+         <div><label class="label">Org.nr</label><input class="input" id="ku-orgnr" style="width:100%"></div>
+       </div>
+       <button class="btn ghost" id="ku-add" style="margin-top:12px">+ Lägg till kund</button>
+       <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:8px">${lista}</div>
+       <div style="display:flex;margin-top:18px"><button class="btn" id="ku-stang" style="flex:1">Klar</button></div>
+     </div></div>`;
+    const close=()=>root.innerHTML="";
+    $("ku-close").onclick=close; $("ku-stang").onclick=close;
+    $("kubg").onclick=ev=>{ if(ev.target.id==="kubg") close(); };
+    $("ku-add").onclick=()=>{ const namn=$("ku-namn").value.trim(); if(!namn){ alert("Ange namn."); return; }
+      co().kunder.push({ id:"k"+Date.now()+Math.floor(Math.random()*1e6), namn, epost:$("ku-epost").value.trim(), adress:$("ku-adress").value.trim(), postort:$("ku-postort").value.trim(), orgnr:$("ku-orgnr").value.trim() });
+      save(); rita(); };
+    root.querySelectorAll("[data-kdel]").forEach(btn=>btn.onclick=()=>{ co().kunder=co().kunder.filter(k=>k.id!==btn.dataset.kdel); save(); rita(); });
+  }
+  rita();
+}
+
+function openFakturaInfo(){
+  const root=document.getElementById("modal"); const $=id=>document.getElementById(id);
+  const c=co(); const fi=c.fakturaInfo||{};
+  root.innerHTML=`
+   <div class="modal-bg" id="fibg"><div class="modal" style="max-width:600px">
+     <div class="modal-head"><div class="serif" style="font-size:22px">Fakturauppgifter</div><button class="x" id="fi-close">✕</button></div>
+     <p class="note" style="margin-top:0">Dessa uppgifter visas på fakturorna för ${esc(c.firma)}.</p>
+     <div class="form-grid">
+       <div style="grid-column:1/-1"><label class="label">Adress</label><input class="input" id="fi-adress" value="${esc(fi.adress||"")}" style="width:100%"></div>
+       <div><label class="label">Postnr</label><input class="input" id="fi-postnr" value="${esc(fi.postnr||"")}" style="width:100%"></div>
+       <div><label class="label">Ort</label><input class="input" id="fi-ort" value="${esc(fi.ort||"")}" style="width:100%"></div>
+       <div><label class="label">E-post</label><input class="input" id="fi-epost" value="${esc(fi.epost||"")}" style="width:100%"></div>
+       <div><label class="label">Telefon</label><input class="input" id="fi-telefon" value="${esc(fi.telefon||"")}" style="width:100%"></div>
+       <div><label class="label">Bankgiro</label><input class="input" id="fi-bankgiro" value="${esc(fi.bankgiro||"")}" style="width:100%"></div>
+       <div><label class="label">IBAN</label><input class="input" id="fi-iban" value="${esc(fi.iban||"")}" style="width:100%"></div>
+       <div><label class="label">Momsreg.nr</label><input class="input" id="fi-momsnr" value="${esc(fi.momsnr||"")}" style="width:100%"></div>
+       <div><label class="label">Nästa fakturanummer</label><input class="input" id="fi-nextnr" type="number" min="1" value="${esc(String(c.nextFaktNr||1))}" style="width:100%"></div>
+     </div>
+     <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer">
+       <input type="checkbox" id="fi-fskatt" ${fi.fskatt?"checked":""}> Godkänd för F-skatt (visas på fakturan)</label>
+     <div style="display:flex;gap:10px;margin-top:20px">
+       <button class="btn ghost" id="fi-avbryt" style="flex:1">Avbryt</button>
+       <button class="btn" id="fi-spara" style="flex:1">Spara</button>
+     </div>
+   </div></div>`;
+  const close=()=>root.innerHTML="";
+  $("fi-close").onclick=close; $("fi-avbryt").onclick=close;
+  $("fibg").onclick=ev=>{ if(ev.target.id==="fibg") close(); };
+  $("fi-spara").onclick=()=>{
+    co().fakturaInfo={ adress:$("fi-adress").value.trim(), postnr:$("fi-postnr").value.trim(), ort:$("fi-ort").value.trim(),
+      epost:$("fi-epost").value.trim(), telefon:$("fi-telefon").value.trim(), bankgiro:$("fi-bankgiro").value.trim(),
+      iban:$("fi-iban").value.trim(), momsnr:$("fi-momsnr").value.trim(), fskatt:$("fi-fskatt").checked };
+    const nn=parseInt($("fi-nextnr").value,10); if(!isNaN(nn)&&nn>0) co().nextFaktNr=nn;
+    save(); close(); render();
+  };
+}
+
+/* ============================================================ */
+/*  Modal: Inställningar                                       */
+/* ============================================================ */
+function openInst(){
+  const s=co(), root=document.getElementById("modal"), cfg=ghCfg();
+  const coOpts=state.companies.map(c=>`<option value="${c.id}" ${c.id===state.activeId?"selected":""}>${esc(c.firma)}</option>`).join("");
+  root.innerHTML=`
+   <div class="modal-bg" id="ibg"><div class="modal">
+     <div class="modal-head"><div class="serif" style="font-size:22px">Inställningar</div><button class="x" id="i-close">✕</button></div>
+     <label class="label">Aktivt företag</label>
+     <div style="display:flex;gap:8px;margin-bottom:16px">
+       <select class="select" id="i-co" style="flex:1">${coOpts}</select>
+       <button class="btn ghost" id="i-co-add" title="Lägg till företag">+ Företag</button>
+     </div>
+     <label class="label">Firmanamn</label>
+     <input class="input" id="i-firma" value="${esc(s.firma)}" style="width:100%;margin-bottom:14px">
+     <label class="label">Person-/organisationsnummer</label>
+     <input class="input" id="i-org" value="${esc(s.orgnr)}" placeholder="ÅÅÅÅMMDD-XXXX" style="width:100%">
+     ${state.companies.length>1?`<button class="del" id="i-co-del" style="margin-top:12px;font-size:13px">Ta bort detta företag</button>`:""}
+     <div style="border-top:1px solid var(--line);margin:22px 0 0;padding-top:18px">
+       <div class="serif" style="font-size:17px;margin-bottom:4px">Säkerhetskopia</div>
+       <p class="note" style="margin-top:0">Spara all data – alla företag, verifikationer och kvitton – till en fil, eller läs tillbaka en tidigare kopia. Bra att göra regelbundet och inför byte av dator.</p>
+       <div style="display:flex;gap:10px;flex-wrap:wrap">
+         <button class="btn ghost" id="i-export" style="flex:1">⭳ Exportera all data</button>
+         <button class="btn ghost" id="i-import" style="flex:1">⭱ Återställ från fil</button>
+       </div>
+     </div>
+     <div style="border-top:1px solid var(--line);margin:22px 0 0;padding-top:18px">
+       <div class="serif" style="font-size:17px;margin-bottom:4px">Synka med GitHub</div>
+       <p class="note" style="margin-top:0">Varje företag sparas som en <b>egen fil</b> i en mapp i ett <b>privat</b> GitHub-repo (<code>mapp/&lt;företags-id&gt;.json</code>), med sina egna kvitton. Kräver ett repo och en fine-grained token med behörigheten <b>Contents: Read and write</b> begränsad till repot. Token lagras endast lokalt och ingår inte i exportfilen.</p>
+       <div class="form-grid">
+         <div><label class="label">Repo (ägare/namn)</label><input class="input" id="gh-repo" value="${esc(cfg.owner&&cfg.repo?cfg.owner+"/"+cfg.repo:"")}" placeholder="lars/bokforing" style="width:100%"></div>
+         <div><label class="label">Gren</label><input class="input" id="gh-branch" value="${esc(cfg.branch||"main")}" placeholder="main" style="width:100%"></div>
+         <div style="grid-column:1/-1"><label class="label">Mapp i repot</label><input class="input" id="gh-folder" value="${esc(cfg.folder!=null?cfg.folder:"bokforing")}" placeholder="bokforing" style="width:100%"></div>
+         <div style="grid-column:1/-1"><label class="label">Access token</label><input class="input" id="gh-token" type="password" value="${esc(cfg.token||"")}" placeholder="github_pat_…" style="width:100%"></div>
+       </div>
+       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer">
+         <input type="checkbox" id="gh-auto" ${cfg.auto?"checked":""}> Spara automatiskt vid ändringar (aktivt företag)</label>
+       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+         <button class="btn ghost" id="gh-push" style="flex:1">⭳ Spara aktivt företag</button>
+         <button class="btn ghost" id="gh-push-all" style="flex:1">⭳ Spara alla</button>
+         <button class="btn ghost" id="gh-pull" style="flex:1">⭱ Hämta från GitHub</button>
+       </div>
+       <div id="i-gh-status" class="note" style="margin-top:10px"></div>
+     </div>
+     <div style="display:flex;gap:10px;margin-top:20px">
+       <button class="btn ghost" id="i-avbryt" style="flex:1">Stäng</button>
+       <button class="btn" id="i-spara" style="flex:1">Spara</button>
+     </div></div></div>`;
+  const close=()=>root.innerHTML="";
+  document.getElementById("i-close").onclick=close;
+  document.getElementById("i-avbryt").onclick=close;
+  document.getElementById("ibg").onclick=e=>{ if(e.target.id==="ibg") close(); };
+  document.getElementById("i-export").onclick=exportBackup;
+  document.getElementById("i-import").onclick=importBackup;
+  const ghStatus=msg=>{ const el=document.getElementById("i-gh-status"); if(el) el.textContent=msg; };
+  function readGh(){
+    let repo=(document.getElementById("gh-repo").value||"").trim()
+      .replace(/^https?:\/\/github\.com\//i,"").replace(/\.git$/,"").replace(/\/+$/,"");
+    const parts=repo.split("/");
+    const c={ owner:(parts[0]||"").trim(), repo:(parts[1]||"").trim(),
+      branch:(document.getElementById("gh-branch").value||"main").trim()||"main",
+      folder:(document.getElementById("gh-folder").value||"").trim().replace(/^\/+|\/+$/g,""),
+      token:document.getElementById("gh-token").value.trim(),
+      auto:document.getElementById("gh-auto").checked };
+    ghSaveCfg(c); return c;
+  }
+  document.getElementById("gh-push").onclick=()=>{ readGh(); ghPush(ghStatus); };
+  document.getElementById("gh-push-all").onclick=()=>{ readGh(); ghPushAll(ghStatus); };
+  document.getElementById("gh-pull").onclick=()=>{ readGh(); ghPull(ghStatus); };
+  document.getElementById("gh-auto").onchange=readGh;
+
+  function saveCurrentFields(){
+    const c=co(); if(!c) return;
+    const fn=document.getElementById("i-firma"), on=document.getElementById("i-org");
+    if(fn) c.firma=(fn.value.trim())||"Min Enskilda Firma";
+    if(on) c.orgnr=on.value.trim();
+  }
+  document.getElementById("i-co").onchange=e=>{
+    saveCurrentFields(); state.activeId=e.target.value; state.year="alla"; state.manad="alla";
+    save(); render(); openInst();
+  };
+  document.getElementById("i-co-add").onclick=()=>{
+    saveCurrentFields();
+    const namn=prompt("Namn på det nya företaget:","Nytt företag");
+    if(namn===null) return;
+    const c=tomtForetag(namn.trim()||"Nytt företag");
+    state.companies.push(c); state.activeId=c.id; state.year="alla"; state.manad="alla";
+    save(); render(); openInst();
+  };
+  const delBtn=document.getElementById("i-co-del");
+  if(delBtn) delBtn.onclick=async ()=>{
+    if(state.companies.length<=1) return;
+    const c=co();
+    if(!confirm(`Ta bort företaget "${c.firma}" och all dess bokföring (${c.trans.length} verifikationer)? Detta går inte att ångra.`)) return;
+    for(const t of c.trans){ try{ await Kvitton.del(String(t.id)); }catch(e){} }
+    state.companies=state.companies.filter(x=>x.id!==c.id);
+    state.activeId=state.companies[0].id; state.year="alla"; state.manad="alla";
+    save(); render(); openInst();
+  };
+  document.getElementById("i-spara").onclick=()=>{
+    saveCurrentFields(); save(); close(); render();
+  };
+}
+
+/* ============================================================ */
+/*  CSV-export                                                 */
+/* ============================================================ */
+function exportCSV(){
+  const rows=[["Ver","Datum","Typ","Konto","Benämning","Beskrivning","Netto","Moms","Brutto","Kvitto"]];
+  filtrerade().slice().reverse().forEach(t=>{ const b=belopp(t);
+    rows.push([ "A"+t.ver, t.datum, t.typ==="intakt"?"Intäkt":"Kostnad", t.konto, t.kontoNamn, t.beskrivning||"",
+      b.netto.toFixed(2).replace(".",","), b.moms.toFixed(2).replace(".",","), b.brutto.toFixed(2).replace(".",","),
+      t.kvitto?(t.kvittoNamn||"Ja"):"" ]); });
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(";")).join("\n");
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  const slug=(co().firma||"firma").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"firma";
+  a.href=url; a.download=`bokforing-${slug}-${state.year==="alla"?"alla-ar":state.year}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ============================================================ */
+/*  Import av bank-CSV                                          */
+/* ============================================================ */
+function parseCSVText(text){
+  text = text.replace(/^\uFEFF/, "");
+  const firstLine = text.split(/\r?\n/).find(l=>l.trim().length) || "";
+  const cnt = { ";":(firstLine.match(/;/g)||[]).length, ",":(firstLine.match(/,/g)||[]).length, "\t":(firstLine.match(/\t/g)||[]).length };
+  let delim=";"; if(cnt[","]>cnt[delim])delim=","; if(cnt["\t"]>cnt[delim])delim="\t";
+  const rows=[]; let row=[], field="", q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else q=false; } else field+=c; }
+    else {
+      if(c==='"') q=true;
+      else if(c===delim){ row.push(field); field=""; }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=""; }
+      else if(c==='\r'){ /* hoppa */ }
+      else field+=c;
+    }
+  }
+  if(field.length||row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r=>r.some(c=>String(c).trim().length));
+}
+function parseBelopp(s){
+  if(s==null) return NaN;
+  let x=String(s).trim(); let neg=false;
+  if(/^\(.*\)$/.test(x)){ neg=true; x=x.slice(1,-1); }
+  if(/-/.test(x)) neg=true;
+  x=x.replace(/[^\d.,]/g,"");
+  if(x.indexOf(",")>-1 && x.indexOf(".")>-1){
+    if(x.lastIndexOf(",")>x.lastIndexOf(".")) x=x.replace(/\./g,"").replace(",",".");
+    else x=x.replace(/,/g,"");
+  } else if(x.indexOf(",")>-1){ x=x.replace(",", "."); }
+  const n=parseFloat(x); if(isNaN(n)) return NaN;
+  return neg?-Math.abs(n):n;
+}
+function parseDatum(s){
+  if(!s) return null;
+  let x=String(s).trim().replace(/[/.]/g,"-");
+  let m;
+  if(m=x.match(/(\d{4})-(\d{1,2})-(\d{1,2})/)) return `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`;
+  if(m=x.match(/(\d{1,2})-(\d{1,2})-(\d{4})/)) return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+  if(m=x.match(/(\d{8})/)) return `${m[1].slice(0,4)}-${m[1].slice(4,6)}-${m[1].slice(6,8)}`;
+  return null;
+}
+function decodeFile(buf){
+  let txt=new TextDecoder("utf-8").decode(buf);
+  if(txt.indexOf("\uFFFD")>-1){ try{ txt=new TextDecoder("windows-1252").decode(buf); }catch(e){} }
+  return txt;
+}
+
+function openImport(){
+  const root=document.getElementById("modal");
+  let rows=[];
+  const $=id=>document.getElementById(id);
+  const close=()=>root.innerHTML="";
+
+  root.innerHTML=`
+   <div class="modal-bg" id="impbg"><div class="modal" style="max-width:780px">
+     <div class="modal-head"><div class="serif" style="font-size:22px">Importera bank-CSV</div>
+       <button class="x" id="imp-close">✕</button></div>
+     <div id="imp-body">
+       <p class="note" style="margin-top:0">Exportera dina transaktioner som CSV-fil från din internetbank och välj filen här, eller klistra in raderna nedan.</p>
+       <input type="file" id="imp-file" accept=".csv,.txt,text/csv" class="input" style="width:100%;margin-bottom:12px">
+       <textarea id="imp-paste" class="input" placeholder="…eller klistra in CSV-text här" style="width:100%;min-height:90px;font-family:'IBM Plex Mono',monospace;font-size:12px"></textarea>
+       <div style="display:flex;gap:10px;margin-top:16px">
+         <button class="btn ghost" id="imp-avbryt" style="flex:1">Avbryt</button>
+         <button class="btn" id="imp-tolka" style="flex:1">Tolka →</button>
+       </div>
+     </div>
+   </div></div>`;
+
+  $("imp-close").onclick=close; $("imp-avbryt").onclick=close;
+  $("impbg").onclick=e=>{ if(e.target.id==="impbg") close(); };
+  $("imp-file").onchange=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{ rows=parseCSVText(decodeFile(r.result)); steg2(); };
+    r.readAsArrayBuffer(f);
+  };
+  $("imp-tolka").onclick=()=>{
+    const t=$("imp-paste").value;
+    if(t.trim()){ rows=parseCSVText(t); steg2(); }
+    else if(!$("imp-file").files[0]) alert("Välj en fil eller klistra in CSV-text först.");
+  };
+
+  function guess(keys,names){ for(let i=0;i<keys.length;i++){ const h=keys[i].toLowerCase(); if(names.some(n=>h.includes(n))) return i; } return -1; }
+
+  function steg2(){
+    if(!rows.length){ alert("Hittade inga rader i filen."); return; }
+    const maxCols=Math.max(...rows.map(r=>r.length));
+    const headers=rows[0].map((h,i)=> (h&&h.trim())? h.trim() : "Kolumn "+(i+1));
+    const hasHeader=rows[0].filter(c=>/\d/.test(c)).length<=1;
+    const opts=sel=>headers.map((h,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(h)}</option>`).join("");
+    let gD=guess(headers,["datum","date","bokf"]); if(gD<0)gD=0;
+    let gT=guess(headers,["text","beskriv","meddel","referens","motpart","info","narration","rubrik"]); if(gT<0)gT=Math.min(1,maxCols-1);
+    let gB=guess(headers,["belopp","amount","summa","transaktion"]); if(gB<0)gB=maxCols-1;
+
+    $("imp-body").innerHTML=`
+      <p class="note" style="margin-top:0">${rows.length} rader hittades. Koppla kolumnerna till rätt fält.</p>
+      <div class="form-grid">
+        <div><label class="label">Datum</label><select class="select" id="map-d" style="width:100%">${opts(gD)}</select></div>
+        <div><label class="label">Belopp</label><select class="select" id="map-b" style="width:100%">${opts(gB)}</select></div>
+        <div style="grid-column:1/-1"><label class="label">Text / beskrivning</label><select class="select" id="map-t" style="width:100%">${opts(gT)}</select></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px;cursor:pointer">
+        <input type="checkbox" id="map-head" ${hasHeader?"checked":""}> Första raden är rubrik (hoppa över den)</label>
+      <div style="display:flex;gap:10px;margin-top:20px">
+        <button class="btn ghost" id="imp-tillbaka" style="flex:1">← Tillbaka</button>
+        <button class="btn" id="imp-granska" style="flex:1">Granska poster →</button>
+      </div>`;
+    $("imp-tillbaka").onclick=()=>openImport();
+    $("imp-granska").onclick=()=>steg3(Number($("map-d").value),Number($("map-t").value),Number($("map-b").value),$("map-head").checked);
+  }
+
+  function steg3(di,ti,bi,head){
+    const data=head?rows.slice(1):rows;
+    const cands=data.map(r=>{
+      const datum=parseDatum(r[di]); const bel=parseBelopp(r[bi]);
+      return { datum, text:(r[ti]||"").trim(), bel, typ:bel>=0?"intakt":"kostnad",
+               ok: datum!=null && !isNaN(bel) && bel!==0 };
+    });
+    const giltiga=cands.filter(c=>c.ok);
+    if(!giltiga.length){ alert("Kunde inte tolka datum/belopp. Kontrollera att rätt kolumner valts."); return; }
+
+    const kontoSel=(typ,konto)=>`<select class="select imp-konto" style="padding:6px 8px;font-size:13px;width:100%;min-width:170px">${
+      KONTON[typ].map(k=>`<option value="${k.konto}|${k.moms}" ${k.konto===konto?"selected":""}>${k.konto} · ${esc(k.namn)}</option>`).join("")}</select>`;
+    const momsSel=m=>`<select class="select imp-moms" style="padding:6px 8px;font-size:13px;width:72px">${[25,12,6,0].map(x=>`<option value="${x}" ${x===m?"selected":""}>${x}%</option>`).join("")}</select>`;
+
+    let body="";
+    cands.forEach((c,idx)=>{
+      if(!c.ok) return;
+      const defKonto=c.typ==="intakt"?"3001":"6991";
+      body+=`<tr data-row="${idx}">
+        <td><input type="checkbox" class="imp-inc" checked></td>
+        <td class="num" style="font-size:12px;white-space:nowrap">${esc(c.datum)}</td>
+        <td style="max-width:190px;font-size:13px">${esc(c.text||"—")}</td>
+        <td><span class="pill ${c.typ==="intakt"?"in":"ut"}">${c.typ==="intakt"?"Intäkt":"Kostnad"}</span></td>
+        <td class="r" style="font-weight:500;white-space:nowrap">${esc(kr(Math.abs(c.bel)))}</td>
+        <td>${kontoSel(c.typ,defKonto)}</td>
+        <td>${momsSel(25)}</td></tr>`;
+    });
+
+    $("imp-body").innerHTML=`
+      <p class="note" style="margin-top:0">${giltiga.length} poster kan importeras. Bocka ur sådant som inte ska bokföras (t.ex. överföringar mellan egna konton eller egna uttag) och justera konto/moms vid behov. Banksaldots belopp tolkas som inkl. moms.</p>
+      <div style="overflow:auto;max-height:46vh;border:1px solid var(--line);border-radius:12px">
+        <table class="tbl"><thead><tr>
+          <th></th><th>Datum</th><th>Text</th><th>Typ</th><th class="r">Belopp</th><th>Konto</th><th>Moms</th>
+        </tr></thead><tbody id="imp-rows">${body}</tbody></table>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn ghost" id="imp-tillbaka2" style="flex:1">← Tillbaka</button>
+        <button class="btn" id="imp-kor" style="flex:2">Importera valda poster</button>
+      </div>`;
+
+    document.querySelectorAll("#imp-rows tr").forEach(tr=>{
+      const ks=tr.querySelector(".imp-konto"), ms=tr.querySelector(".imp-moms");
+      if(ks) ks.onchange=()=>{ ms.value=Number(ks.value.split("|")[1]); };
+    });
+    $("imp-tillbaka2").onclick=()=>steg2();
+    $("imp-kor").onclick=()=>{
+      let n=0;
+      document.querySelectorAll("#imp-rows tr").forEach(tr=>{
+        if(!tr.querySelector(".imp-inc").checked) return;
+        const c=cands[Number(tr.dataset.row)];
+        const konto=tr.querySelector(".imp-konto").value.split("|")[0];
+        const kObj=KONTON[c.typ].find(k=>k.konto===konto)||{namn:konto};
+        co().trans.push({
+          id:"imp"+Date.now()+"_"+(n)+"_"+Math.floor(Math.random()*1e6),
+          ver:co().nextVer++, datum:c.datum, typ:c.typ,
+          konto, kontoNamn:kObj.namn, beskrivning:c.text,
+          beloppInput:Math.abs(c.bel), inklMoms:true, momssats:Number(tr.querySelector(".imp-moms").value),
+        });
+        n++;
+      });
+      save(); close(); state.vy="verifikationer"; render();
+      alert(n+" poster importerades.");
+    };
+  }
+}
+
+/* ============================================================ */
+/*  Säkerhetskopiering + GitHub-synk                           */
+/* ============================================================ */
+function validBackup(d){ return d && d.app==="ef-bokforing" && (Array.isArray(d.companies) || Array.isArray(d.trans)); }
+function antalPoster(d){
+  if(Array.isArray(d.companies)) return d.companies.reduce((n,c)=>n+(Array.isArray(c.trans)?c.trans.length:0),0);
+  return Array.isArray(d.trans)?d.trans.length:0;
+}
+
+async function buildBackupData(){
+  let kvitton={};
+  try{
+    const kv=await Kvitton.all();
+    kv.forEach(r=>{ if(r&&r.id) kvitton[r.id]={ name:r.name, type:r.type, dataUrl:r.dataUrl }; });
+  }catch(e){ console.warn("Kunde inte läsa kvitton", e); }
+  return { app:"ef-bokforing", version:2, exportedAt:new Date().toISOString(),
+    companies:state.companies, activeId:state.activeId, kvitton };
+}
+
+async function applyBackup(data){
+  try{ await Kvitton.clear(); }catch(e){}
+  if(data.kvitton){ for(const id of Object.keys(data.kvitton)){ const r=data.kvitton[id];
+    try{ await Kvitton.put({ id, name:r.name, type:r.type, dataUrl:r.dataUrl }); }catch(e){ console.warn("Kvitto kunde inte återställas", id); } } }
+  if(Array.isArray(data.companies) && data.companies.length){
+    state.companies=data.companies; state.activeId=data.activeId||data.companies[0].id;
+  } else { // gammalt format
+    const c=tomtForetag((data.settings&&data.settings.firma)||"Min Enskilda Firma");
+    if(data.settings){ c.orgnr=data.settings.orgnr||""; c.nextVer=data.settings.nextVer||1; }
+    c.trans=Array.isArray(data.trans)?data.trans:[];
+    state.companies=[c]; state.activeId=c.id;
+  }
+  if(!co()) state.activeId=state.companies[0].id;
+  state.companies.forEach(normCompany);
+  save(); render();
+}
+
+async function exportBackup(){
+  const data=await buildBackupData();
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json;charset=utf-8"});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`bokforing-backup-${idag()}.json`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(){
+  const inp=document.createElement("input");
+  inp.type="file"; inp.accept="application/json,.json";
+  inp.onchange=()=>{
+    const f=inp.files[0]; if(!f) return;
+    const fr=new FileReader();
+    fr.onload=async ()=>{
+      let data;
+      try{ data=JSON.parse(fr.result); }catch(e){ alert("Filen kunde inte läsas som en giltig säkerhetskopia."); return; }
+      if(!validBackup(data)){ alert("Det här ser inte ut som en säkerhetskopia från appen."); return; }
+      const antalK=data.kvitton?Object.keys(data.kvitton).length:0;
+      if(!confirm(`Återställ ${antalPoster(data)} verifikationer och ${antalK} kvitton?\n\nDetta ERSÄTTER all data som finns i appen just nu.`)) return;
+      await applyBackup(data);
+      document.getElementById("modal").innerHTML="";
+      alert("Säkerhetskopian har återställts.");
+    };
+    fr.readAsText(f);
+  };
+  inp.click();
+}
+
+/* ---- GitHub (en fil per företag) ---- */
+const GH_KEY="ef-github";
+var _ghTimer=null;
+function ghCfg(){ try{ return JSON.parse(localStorage.getItem(GH_KEY))||{}; }catch(e){ return {}; } }
+function ghSaveCfg(c){ try{ localStorage.setItem(GH_KEY, JSON.stringify(c)); }catch(e){} }
+function utf8ToB64(s){ return btoa(unescape(encodeURIComponent(s))); }
+function b64ToUtf8(b){ return decodeURIComponent(escape(atob(String(b).replace(/\s/g,"")))); }
+
+function ghHeaders(extra){
+  const c=ghCfg();
+  return Object.assign({ "Authorization":"Bearer "+c.token, "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28" }, extra||{});
+}
+function ghEncPath(p){ return String(p).split("/").filter(x=>x!=="").map(encodeURIComponent).join("/"); }
+function ghFolder(){ return (ghCfg().folder||"").trim().replace(/^\/+|\/+$/g,""); }
+function ghCompanyPath(company){ const f=ghFolder(); return (f?f+"/":"")+company.id+".json"; }
+
+async function ghGet(path){
+  const c=ghCfg();
+  const res=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${ghEncPath(path)}?ref=${encodeURIComponent(c.branch||"main")}`, { headers:ghHeaders() });
+  if(res.status===404) return { exists:false };
+  if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||("GitHub-fel "+res.status)); }
+  const j=await res.json();
+  if(Array.isArray(j)) return { exists:true, dir:true, entries:j };
+  return { exists:true, sha:j.sha, content:b64ToUtf8(j.content) };
+}
+async function ghPut(path, str, message){
+  const c=ghCfg();
+  let sha=null;
+  try{ const cur=await ghGet(path); if(cur.exists && !cur.dir) sha=cur.sha; }catch(e){ /* nytt repo/fil */ }
+  const res=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${ghEncPath(path)}`, {
+    method:"PUT", headers:ghHeaders({ "Content-Type":"application/json" }),
+    body:JSON.stringify({ message, content:utf8ToB64(str), sha:sha||undefined, branch:c.branch||"main" })
+  });
+  if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||("GitHub-fel "+res.status)); }
+}
+
+async function buildCompanyData(company){
+  let kvitton={};
+  try{
+    const all=await Kvitton.all();
+    const ids=new Set(company.trans.map(t=>String(t.id)));
+    all.forEach(r=>{ if(r&&r.id&&ids.has(String(r.id))) kvitton[r.id]={ name:r.name, type:r.type, dataUrl:r.dataUrl }; });
+  }catch(e){ console.warn("Kunde inte läsa kvitton", e); }
+  return { app:"ef-bokforing-company", version:1, exportedAt:new Date().toISOString(), company, kvitton };
+}
+async function applyCompanyData(data){
+  if(!data || data.app!=="ef-bokforing-company" || !data.company || !data.company.id) throw new Error("Ogiltig företagsfil.");
+  if(data.kvitton){ for(const id of Object.keys(data.kvitton)){ const r=data.kvitton[id];
+    try{ await Kvitton.put({ id, name:r.name, type:r.type, dataUrl:r.dataUrl }); }catch(e){} } }
+  const comp=Object.assign({ orgnr:"", nextVer:1, trans:[] }, data.company);
+  normCompany(comp);
+  const i=state.companies.findIndex(c=>c.id===comp.id);
+  if(i>=0) state.companies[i]=comp; else state.companies.push(comp);
+  if(!state.activeId || !co()) state.activeId=state.companies[0].id;
+}
+
+async function ghPushCompany(company, status){
+  if(status) status("Sparar "+company.firma+"…");
+  const data=await buildCompanyData(company);
+  await ghPut(ghCompanyPath(company), JSON.stringify(data), "Uppdatera "+company.firma+" "+new Date().toISOString());
+}
+async function ghPush(status){ // aktivt företag
+  const c=ghCfg(); if(!c.owner||!c.repo||!c.token){ (status||alert)("Fyll i repo och token först."); return; }
+  try{ await ghPushCompany(co(), status); if(status) status("Sparat ✓ "+new Date().toLocaleTimeString("sv-SE")); }
+  catch(err){ if(status) status("Fel: "+err.message); else alert("Fel: "+err.message); }
+}
+async function ghPushAll(status){ // alla företag
+  const c=ghCfg(); if(!c.owner||!c.repo||!c.token){ (status||alert)("Fyll i repo och token först."); return; }
+  try{ for(const comp of state.companies) await ghPushCompany(comp, status);
+    if(status) status("Alla företag sparade ✓ "+new Date().toLocaleTimeString("sv-SE")); }
+  catch(err){ if(status) status("Fel: "+err.message); else alert("Fel: "+err.message); }
+}
+async function ghPull(status){
+  const c=ghCfg(); if(!c.owner||!c.repo||!c.token){ (status||alert)("Fyll i repo och token först."); return; }
+  if(status) status("Hämtar från GitHub…");
+  try{
+    const listing=await ghGet(ghFolder());
+    let files=[];
+    if(listing.exists && listing.dir) files=listing.entries.filter(e=>e.type==="file" && /\.json$/i.test(e.name));
+    if(!files.length){ if(status) status("Inga företagsfiler hittades i repot."); return; }
+    if(!confirm(`Hämta upp till ${files.length} företagsfil(er) från GitHub?\n\nFöretag med samma id ersätts av versionen i repot. Övriga företag i appen lämnas orörda.`)){ if(status) status(""); return; }
+    let n=0;
+    for(const fe of files){
+      let got; try{ got=await ghGet(fe.path); }catch(e){ continue; }
+      if(!got.exists || got.dir) continue;
+      let data; try{ data=JSON.parse(got.content); }catch(e){ continue; }
+      if(data && data.app==="ef-bokforing-company"){ await applyCompanyData(data); n++; }
+    }
+    save(); render();
+    if(status) status(n+" företag hämtade ✓");
+  }catch(err){ if(status) status("Fel: "+err.message); else alert("Fel: "+err.message); }
+}
+function scheduleGhPush(){
+  const c=ghCfg(); if(!c.auto||!c.owner||!c.repo||!c.token) return;
+  clearTimeout(_ghTimer);
+  _ghTimer=setTimeout(()=>ghPush(msg=>{ const el=document.getElementById("i-gh-status"); if(el) el.textContent=msg; }), 4000);
+}
+
+/* ============================================================ */
+/*  Start                                                      */
+/* ============================================================ */
+load();
+render();
+</script>
+</body>
+</html>
