@@ -164,9 +164,15 @@ const krShort = n => Math.round(Number(n)||0).toLocaleString("sv-SE")+" kr";
 const idag = () => new Date().toISOString().slice(0,10);
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
+// Omvänd skattskyldighet vid inköp av tjänster från utlandet:
+//   "eu"  = tjänst från annat EU-land (ruta 21), "ej-eu" = tjänst från land utanför EU (ruta 22).
+// Säljaren tar inte ut moms. Köparen räknar själv fram momsen på beloppet och redovisar den
+// både som utgående (ruta 30–32) och ingående (ruta 48). Betalt belopp = netto.
+const OMVAND = { "":"Ingen", "eu":"Omvänd moms – tjänst från EU", "ej-eu":"Omvänd moms – tjänst utanför EU" };
 function belopp(t){
   const inp = Number(t.beloppInput)||0, r = Number(t.momssats)||0;
   let netto, moms, brutto;
+  if(t.omvand){ netto=inp; moms=inp*(r/100); brutto=inp; return { brutto, netto, moms, omvand:true }; }
   if(t.inklMoms){ brutto=inp; moms=inp*(r/(100+r)); netto=brutto-moms; }
   else { netto=inp; moms=inp*(r/100); brutto=netto+moms; }
   return { brutto, netto, moms };
@@ -306,6 +312,31 @@ const Kvitton = (function(){
   return { put, get, del, all, clear };
 })();
 
+// Flera kvitton per verifikation: första har id = t.id, följande t.id~2, t.id~3 …
+function kvittoBasId(id){ return String(id).split("~")[0]; }
+function kvittoIds(t){
+  if(!t.kvitto) return [];
+  const n=Math.max(1,Number(t.kvittoAntal)||1), ids=[String(t.id)];
+  for(let i=2;i<=n;i++) ids.push(String(t.id)+"~"+i);
+  return ids;
+}
+async function laggTillKvitto(t, k){
+  if(!t.kvitto){
+    await Kvitton.put({ id:String(t.id), name:k.name, type:k.type, dataUrl:k.dataUrl });
+    t.kvitto=true; t.kvittoNamn=k.name; t.kvittoAntal=1;
+  } else {
+    const n=(Math.max(1,Number(t.kvittoAntal)||1))+1;
+    await Kvitton.put({ id:String(t.id)+"~"+n, name:k.name, type:k.type, dataUrl:k.dataUrl });
+    t.kvittoAntal=n;
+  }
+}
+async function sparaKvittoLista(t, recs){ // skriver om alla kvitton för t i given ordning
+  for(const id of kvittoIds(t)) { try{ await Kvitton.del(id); }catch(e){} }
+  t.kvitto=false; delete t.kvittoNamn; delete t.kvittoAntal;
+  for(const r of recs) await laggTillKvitto(t, r);
+}
+async function taBortKvitton(t){ await sparaKvittoLista(t, []); }
+
 // Komprimerar bilder, läser PDF som de är
 function processKvitto(file){
   return new Promise((res,rej)=>{
@@ -345,10 +376,27 @@ function years(){
   return Array.from(s).sort().reverse();
 }
 function summor(rows){
-  let intakt=0,kostnad=0,utMoms=0,inMoms=0;
+  let intakt=0,kostnad=0,utMoms=0,inMoms=0,omvMoms=0;
   rows.forEach(t=>{ const b=belopp(t);
-    if(t.typ==="intakt"){intakt+=b.netto; utMoms+=b.moms;} else {kostnad+=b.netto; inMoms+=b.moms;}});
-  return { intakt, kostnad, resultat:intakt-kostnad, utMoms, inMoms, moms:utMoms-inMoms };
+    if(t.typ==="intakt"){intakt+=b.netto; utMoms+=b.moms;}
+    else { kostnad+=b.netto; inMoms+=b.moms; if(t.omvand) omvMoms+=b.moms; }});
+  return { intakt, kostnad, resultat:intakt-kostnad, utMoms, omvMoms, inMoms, moms:utMoms+omvMoms-inMoms };
+}
+// Rutor i Skatteverkets momsdeklaration
+function momsRutor(rows){
+  const r={ r05:0, r10:0, r11:0, r12:0, r21:0, r22:0, r30:0, r31:0, r32:0, r42:0, r48:0 };
+  const utRuta={25:"r10",12:"r11",6:"r12"}, omvRuta={25:"r30",12:"r31",6:"r32"};
+  rows.forEach(t=>{ const b=belopp(t), s=Number(t.momssats)||0;
+    if(t.typ==="intakt"){
+      if(t.konto==="3740") return;
+      if(s>0){ r.r05+=b.netto; r[utRuta[s]]+=b.moms; } else r.r42+=b.netto;
+    } else {
+      r.r48+=b.moms;
+      if(t.omvand){ r[t.omvand==="eu"?"r21":"r22"]+=b.netto; if(omvRuta[s]) r[omvRuta[s]]+=b.moms; }
+    }
+  });
+  r.r49 = r.r10+r.r11+r.r12+r.r30+r.r31+r.r32-r.r48;
+  return r;
 }
 function manadsData(){
   if(state.year!=="alla"){
@@ -408,10 +456,11 @@ function tabell(rows, full){
         <div class="konto" style="margin-top:5px">${esc(t.konto)} · ${esc(t.kontoNamn)}</div></td>
       <td style="max-width:220px">${t.beskrivning?esc(t.beskrivning):'<span style="color:var(--muted)">—</span>'}</td>
       <td class="r">${esc(kr(b.netto))}</td>
-      ${full?`<td class="r" style="color:var(--muted)">${t.momssats}%<br>${esc(kr(b.moms))}</td>`:""}
+      ${full?`<td class="r" style="color:var(--muted)">${t.momssats}%${t.omvand?` <span title="${esc(OMVAND[t.omvand])}" style="color:var(--clay)">omv.</span>`:""}<br>${esc(kr(b.moms))}</td>`:""}
       <td class="r" style="font-weight:500">${esc(kr(b.brutto))}</td>
       <td class="r" style="white-space:nowrap">
-        <button class="attach ${t.kvitto?"has":""}" data-kvitto="${t.id}" title="${t.kvitto?"Visa/hantera kvitto":"Bifoga kvitto"}">📎</button>
+        <button class="attach ${t.kvitto?"has":""}" data-kvitto="${t.id}" title="${t.kvitto?"Visa/hantera kvitto":"Bifoga kvitto"}">📎${t.kvitto&&t.kvittoAntal>1?`<sup>${t.kvittoAntal}</sup>`:""}</button>
+        <button class="del" data-edit="${t.id}" title="Redigera">✎</button>
         <button class="del" data-del="${t.id}" title="Ta bort">🗑</button></td></tr>`;
   });
   return `<div style="overflow-x:auto"><table class="tbl"><thead><tr>
@@ -485,19 +534,39 @@ function render(){
         resultatet i din inkomstdeklaration (NE-bilaga). Detta är ett bokföringsstöd, inte skatterådgivning.</div>`;
   }
   else if(state.vy==="moms"){
+    const mr=momsRutor(rows);
+    const ruta=(nr,txt,v,tecken)=> Math.abs(v)<0.005 ? "" :
+      `<div class="rr-row"><span><span class="konto" style="display:inline-block;min-width:34px">${nr}</span>${esc(txt)}</span><span class="num">${tecken||""}${esc(kr(v))}</span></div>`;
     view = `<div class="sec-title">Momsrapport · ${periodLabel}</div>
       <div class="grid kpis3">
-        ${kpi("Utgående moms", kr(sum.utMoms), "moms på försäljning", "neg")}
+        ${kpi("Utgående moms", kr(sum.utMoms+sum.omvMoms), sum.omvMoms?"varav "+kr(sum.omvMoms)+" omvänd":"moms på försäljning", "neg")}
         ${kpi("Ingående moms", kr(sum.inMoms), "moms på inköp", "pos")}
         ${kpi(sum.moms>=0?"Att betala":"Att få tillbaka", kr(Math.abs(sum.moms)), "till/från Skatteverket", sum.moms>=0?"neg":"pos")}
       </div>
       <div class="card" style="margin-top:16px">
         <div class="rr-row"><span>Utgående moms (debiterad kund)</span><span class="num">${esc(kr(sum.utMoms))}</span></div>
-        <div class="rr-row"><span>Ingående moms (betald vid inköp)</span><span class="num">−${esc(kr(sum.inMoms))}</span></div>
+        ${sum.omvMoms?`<div class="rr-row"><span>Utgående moms, omvänd skattskyldighet (inköp från utlandet)</span><span class="num">${esc(kr(sum.omvMoms))}</span></div>`:""}
+        <div class="rr-row"><span>Ingående moms (betald vid inköp${sum.omvMoms?" + omvänd":""})</span><span class="num">−${esc(kr(sum.inMoms))}</span></div>
         <div class="rr-row total"><span class="serif">${sum.moms>=0?"Moms att betala":"Moms att återfå"}</span>
           <span class="num ${sum.moms>=0?"neg":"pos"}">${esc(kr(Math.abs(sum.moms)))}</span></div>
       </div>
-      <div class="note">Välj rätt period i menyn ovan för att stämma av mot din momsdeklaration.</div>`;
+      <div class="sec-title">Momsdeklarationen, ruta för ruta</div>
+      <div class="card">
+        ${ruta("05","Momspliktig försäljning",mr.r05)}
+        ${ruta("10","Utgående moms 25 %",mr.r10)}
+        ${ruta("11","Utgående moms 12 %",mr.r11)}
+        ${ruta("12","Utgående moms 6 %",mr.r12)}
+        ${ruta("21","Inköp av tjänster från annat EU-land",mr.r21)}
+        ${ruta("22","Inköp av tjänster från land utanför EU",mr.r22)}
+        ${ruta("30","Utgående moms 25 % på inköp (omvänd)",mr.r30)}
+        ${ruta("31","Utgående moms 12 % på inköp (omvänd)",mr.r31)}
+        ${ruta("32","Utgående moms 6 % på inköp (omvänd)",mr.r32)}
+        ${ruta("42","Momsfri försäljning",mr.r42)}
+        ${ruta("48","Ingående moms att dra av",mr.r48)}
+        <div class="rr-row total"><span><span class="konto" style="display:inline-block;min-width:34px">49</span><span class="serif">${mr.r49>=0?"Moms att betala":"Moms att få tillbaka"}</span></span>
+          <span class="num ${mr.r49>=0?"neg":"pos"}">${esc(kr(Math.abs(mr.r49)))}</span></div>
+      </div>
+      <div class="note">Välj rätt period i menyn ovan för att stämma av mot din momsdeklaration. Belopp avrundas till hela kronor när du deklarerar.</div>`;
   }
   else if(state.vy==="fakturor"){
     const fakt=co().fakturor.slice().sort((a,b)=>b.nr-a.nr);
@@ -563,16 +632,20 @@ function render(){
   if(selCo) selCo.onchange=e=>{ state.activeId=e.target.value; state.year="alla"; state.manad="alla"; save(); render(); };
   document.getElementById("sel-year").onchange = e=>{ state.year=e.target.value; render(); };
   document.getElementById("sel-man").onchange = e=>{ state.manad=e.target.value; render(); };
-  document.getElementById("btn-ny").onclick = openNyPost;
+  document.getElementById("btn-ny").onclick = ()=>openNyPost();
   document.getElementById("btn-match").onclick = openMatchKvitton;
   document.getElementById("btn-import").onclick = openImport;
   document.getElementById("btn-inst").onclick = openInst;
   const exp=document.getElementById("btn-export"); if(exp) exp.onclick=exportCSV;
   document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
     if(confirm("Ta bort denna verifikation? Eventuellt kvitto tas också bort.")){
-      Kvitton.del(b.dataset.del).catch(()=>{});
+      const tt=co().trans.find(t=>String(t.id)===b.dataset.del);
+      if(tt) taBortKvitton(tt).catch(()=>{});
       co().trans=co().trans.filter(t=>String(t.id)!==b.dataset.del); save(); render();
     }
+  });
+  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{
+    const t=co().trans.find(x=>String(x.id)===b.dataset.edit); if(t) openNyPost(t);
   });
   document.querySelectorAll("[data-kvitto]").forEach(b=>b.onclick=()=>{
     const t=co().trans.find(x=>String(x.id)===b.dataset.kvitto);
@@ -591,49 +664,69 @@ function render(){
 /* ============================================================ */
 /*  Modal: Ny post                                             */
 /* ============================================================ */
-function openNyPost(){
-  let typ="kostnad", inklMoms=true;
-  const ver = co().nextVer;
+function openNyPost(existing){
+  const ed = existing || null;
+  let typ = ed ? ed.typ : "kostnad", inklMoms = ed ? !!ed.inklMoms : true;
+  const ver = ed ? ed.ver : co().nextVer;
   const root = document.getElementById("modal");
 
-  function kontoOptions(t){ return KONTON[t].map((k,i)=>`<option value="${i}">${k.konto} · ${esc(k.namn)}</option>`).join(""); }
+  function kontoLista(t){
+    const l=KONTON[t].slice();
+    if(ed && ed.typ===t && !l.some(k=>k.konto===ed.konto)) l.push({konto:ed.konto, namn:ed.kontoNamn||ed.konto, moms:Number(ed.momssats)||0});
+    return l;
+  }
+  function kontoOptions(t){ return kontoLista(t).map((k,i)=>`<option value="${i}">${k.konto} · ${esc(k.namn)}</option>`).join(""); }
 
   root.innerHTML = `
    <div class="modal-bg" id="mbg">
     <div class="modal" id="mbox">
-      <div class="modal-head"><div class="serif" style="font-size:22px">Ny verifikation <span class="konto">A${ver}</span></div>
+      <div class="modal-head"><div class="serif" style="font-size:22px">${ed?"Redigera":"Ny"} verifikation <span class="konto">A${ver}</span></div>
         <button class="x" id="m-close">✕</button></div>
       <div class="seg" id="seg-typ" style="margin-bottom:16px">
-        <button data-typ="intakt">Intäkt</button>
-        <button data-typ="kostnad" class="on">Kostnad</button>
+        <button data-typ="intakt" class="${typ==="intakt"?"on":""}">Intäkt</button>
+        <button data-typ="kostnad" class="${typ==="kostnad"?"on":""}">Kostnad</button>
       </div>
       <div class="form-grid">
-        <div><label class="label">Datum</label><input class="input" type="date" id="f-datum" value="${idag()}" style="width:100%"></div>
-        <div><label class="label">Konto (BAS)</label><select class="select" id="f-konto" style="width:100%">${kontoOptions("kostnad")}</select></div>
+        <div><label class="label">Datum</label><input class="input" type="date" id="f-datum" value="${esc(ed?ed.datum:idag())}" style="width:100%"></div>
+        <div><label class="label">Konto (BAS)</label><select class="select" id="f-konto" style="width:100%">${kontoOptions(typ)}</select></div>
         <div style="grid-column:1/-1"><label class="label">Beskrivning</label>
-          <input class="input" type="text" id="f-besk" placeholder="t.ex. Kvitto kontorsmaterial" style="width:100%"></div>
-        <div><label class="label">Belopp</label><input class="input num" type="number" min="0" step="0.01" id="f-belopp" placeholder="0,00" style="width:100%"></div>
+          <input class="input" type="text" id="f-besk" placeholder="t.ex. Kvitto kontorsmaterial" value="${esc(ed?ed.beskrivning||"":"")}" style="width:100%"></div>
+        <div><label class="label">Belopp</label><input class="input num" type="number" step="0.01" id="f-belopp" placeholder="0,00" value="${ed?esc(ed.beloppInput):""}" style="width:100%"></div>
         <div><label class="label">Momssats</label><select class="select" id="f-moms" style="width:100%">
           ${[25,12,6,0].map(m=>`<option value="${m}">${m}%</option>`).join("")}</select></div>
+        <div style="grid-column:1/-1" id="f-omv-wrap"><label class="label">Omvänd skattskyldighet</label>
+          <select class="select" id="f-omv" style="width:100%">
+            ${Object.keys(OMVAND).map(k=>`<option value="${k}">${esc(OMVAND[k])}</option>`).join("")}</select></div>
       </div>
       <div class="seg" id="seg-inkl" style="margin-top:14px">
-        <button data-inkl="1" class="on">Belopp inkl. moms</button>
-        <button data-inkl="0">exkl. moms</button>
+        <button data-inkl="1" class="${inklMoms?"on":""}">Belopp inkl. moms</button>
+        <button data-inkl="0" class="${inklMoms?"":"on"}">exkl. moms</button>
       </div>
+      <div class="note" id="f-neg-note" style="display:none;margin-top:10px">Negativt belopp = återbetalning/kreditering som minskar ${typ==="kostnad"?"kostnaden":"intäkten"}.</div>
       <div id="m-preview"></div>
-      <label class="label" style="margin-top:16px">Kvitto (bild eller PDF, valfritt)</label>
+      <label class="label" style="margin-top:16px">${ed&&ed.kvitto?"Lägg till ytterligare kvitto (valfritt)":"Kvitto (bild eller PDF, valfritt)"}</label>
       <input type="file" id="f-kvitto" accept="image/*,application/pdf" class="input" style="width:100%">
       <div id="m-kvitto-prev"></div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn ghost" id="m-avbryt" style="flex:1">Avbryt</button>
-        <button class="btn" id="m-spara" style="flex:2" disabled>+ Bokför post</button>
+        <button class="btn" id="m-spara" style="flex:2" disabled>${ed?"Spara ändringar":"+ Bokför post"}</button>
       </div>
     </div></div>`;
 
   const $=id=>document.getElementById(id);
-  // sätt standardmomssats för valt konto
-  function syncMomsFromKonto(){ const k=KONTON[typ][Number($("f-konto").value)]; $("f-moms").value=k.moms; }
-  syncMomsFromKonto();
+  function syncMomsFromKonto(){ const k=kontoLista(typ)[Number($("f-konto").value)]; $("f-moms").value=k.moms; }
+  if(ed){
+    const i=kontoLista(typ).findIndex(k=>k.konto===ed.konto); $("f-konto").value=String(Math.max(0,i));
+    $("f-moms").value=String(Number(ed.momssats)||0); $("f-omv").value=ed.omvand||"";
+  } else syncMomsFromKonto();
+
+  function syncOmv(){
+    $("f-omv-wrap").style.display = typ==="kostnad" ? "" : "none";
+    if(typ!=="kostnad") $("f-omv").value="";
+    // Vid omvänd moms är betalt belopp alltid exkl. moms
+    $("seg-inkl").style.display = $("f-omv").value ? "none" : "";
+  }
+  syncOmv();
 
   function close(){ root.innerHTML=""; }
   $("m-close").onclick=close; $("m-avbryt").onclick=close;
@@ -642,7 +735,7 @@ function openNyPost(){
   document.querySelectorAll("#seg-typ button").forEach(b=>b.onclick=()=>{
     typ=b.dataset.typ;
     document.querySelectorAll("#seg-typ button").forEach(x=>x.classList.toggle("on", x===b));
-    $("f-konto").innerHTML=kontoOptions(typ); syncMomsFromKonto(); preview();
+    $("f-konto").innerHTML=kontoOptions(typ); syncMomsFromKonto(); syncOmv(); preview();
   });
   document.querySelectorAll("#seg-inkl button").forEach(b=>b.onclick=()=>{
     inklMoms=b.dataset.inkl==="1";
@@ -650,6 +743,7 @@ function openNyPost(){
     preview();
   });
   $("f-konto").onchange=()=>{ syncMomsFromKonto(); preview(); };
+  $("f-omv").onchange=()=>{ syncOmv(); preview(); };
   ["f-belopp","f-moms"].forEach(id=>$(id).oninput=preview);
   $("f-moms").onchange=preview;
 
@@ -672,72 +766,87 @@ function openNyPost(){
   };
 
   function preview(){
-    const inp=Number($("f-belopp").value)||0, ms=Number($("f-moms").value);
-    const b=belopp({beloppInput:inp, momssats:ms, inklMoms});
-    const giltig=inp>0;
+    const inp=Number($("f-belopp").value)||0, ms=Number($("f-moms").value), omv=$("f-omv").value;
+    const b=belopp({beloppInput:inp, momssats:ms, inklMoms, omvand:omv});
+    const giltig=inp!==0;
     $("m-spara").disabled=!giltig;
+    $("f-neg-note").style.display = inp<0 ? "" : "none";
     $("m-preview").innerHTML = giltig ? `<div class="card" style="margin-top:16px;background:#fff">
         <div class="rr-row" style="padding:4px 0"><span>Netto</span><span class="num">${esc(kr(b.netto))}</span></div>
-        <div class="rr-row" style="padding:4px 0"><span>Moms (${ms}%)</span><span class="num">${esc(kr(b.moms))}</span></div>
-        <div class="rr-row" style="padding:4px 0;font-weight:600"><span>Brutto</span><span class="num">${esc(kr(b.brutto))}</span></div>
+        <div class="rr-row" style="padding:4px 0"><span>Moms (${ms}%)${omv?" – redovisas både som utgående och ingående":""}</span><span class="num">${esc(kr(b.moms))}</span></div>
+        <div class="rr-row" style="padding:4px 0;font-weight:600"><span>${omv?"Betalt":"Brutto"}</span><span class="num">${esc(kr(b.brutto))}</span></div>
       </div>` : "";
   }
+  preview();
 
   $("m-spara").onclick=async ()=>{
-    const inp=Number($("f-belopp").value)||0; if(inp<=0) return;
-    const k=KONTON[typ][Number($("f-konto").value)];
-    const id=Date.now();
-    const t={
-      id, ver:co().nextVer, datum:$("f-datum").value||idag(),
-      typ, konto:k.konto, kontoNamn:k.namn, beskrivning:$("f-besk").value.trim(),
-      beloppInput:inp, inklMoms, momssats:Number($("f-moms").value),
-    };
+    const inp=Number($("f-belopp").value)||0; if(inp===0) return;
+    const k=kontoLista(typ)[Number($("f-konto").value)];
+    const omv=typ==="kostnad"?$("f-omv").value:"";
+    const t = ed || { id:Date.now(), ver:co().nextVer };
+    Object.assign(t, {
+      datum:$("f-datum").value||idag(), typ, konto:k.konto, kontoNamn:k.namn,
+      beskrivning:$("f-besk").value.trim(), beloppInput:inp, inklMoms:omv?false:inklMoms,
+      momssats:Number($("f-moms").value),
+    });
+    if(omv) t.omvand=omv; else delete t.omvand;
     if(kvittoData){
-      try{ await Kvitton.put({ id:String(id), name:kvittoData.name, type:kvittoData.type, dataUrl:kvittoData.dataUrl });
-        t.kvitto=true; t.kvittoNamn=kvittoData.name; }
+      try{ await laggTillKvitto(t, kvittoData); }
       catch(err){ alert(err.message); }
     }
-    co().trans.push(t);
-    co().nextVer++; save(); close(); render();
+    if(!ed){ co().trans.push(t); co().nextVer++; }
+    save(); close(); render();
   };
 }
 
 /* ============================================================ */
 /*  Kvitto: bifoga & visa                                      */
 /* ============================================================ */
-function attachKvitto(t){
+function attachKvitto(t, ersattIndex){
   const inp=document.createElement("input");
-  inp.type="file"; inp.accept="image/*,application/pdf";
+  inp.type="file"; inp.accept="image/*,application/pdf"; inp.multiple = ersattIndex==null;
   inp.onchange=async ()=>{
-    const f=inp.files[0]; if(!f) return;
+    const files=Array.from(inp.files||[]); if(!files.length) return;
     try{
-      const k=await processKvitto(f);
-      await Kvitton.put({ id:String(t.id), name:k.name, type:k.type, dataUrl:k.dataUrl });
-      t.kvitto=true; t.kvittoNamn=k.name; save(); render();
+      if(ersattIndex!=null){
+        const k=await processKvitto(files[0]);
+        const recs=[]; for(const id of kvittoIds(t)){ const r=await Kvitton.get(id); if(r) recs.push(r); }
+        recs[ersattIndex]=k; await sparaKvittoLista(t, recs);
+      } else {
+        for(const f of files) await laggTillKvitto(t, await processKvitto(f));
+      }
+      save(); render();
     }catch(err){ alert(err.message||"Kunde inte spara kvittot."); }
   };
   inp.click();
 }
 
-async function openKvittoViewer(t){
+async function openKvittoViewer(t, index){
   const root=document.getElementById("modal");
-  const rec=await Kvitton.get(String(t.id));
-  if(!rec){
-    if(confirm("Kvittot kunde inte hittas. Vill du bifoga ett nytt?")){ t.kvitto=false; save(); attachKvitto(t); }
-    else { t.kvitto=false; save(); render(); }
+  const ids=kvittoIds(t);
+  const recs=[]; for(const id of ids){ const r=await Kvitton.get(id); if(r) recs.push(r); }
+  if(!recs.length){
+    t.kvitto=false; delete t.kvittoAntal; save();
+    if(confirm("Kvittot kunde inte hittas. Vill du bifoga ett nytt?")) attachKvitto(t); else render();
     return;
   }
+  if(recs.length!==ids.length){ await sparaKvittoLista(t, recs); save(); }
+  const i=Math.min(Math.max(0,Number(index)||0), recs.length-1), rec=recs[i];
   const view = rec.type==="application/pdf"
-    ? `<embed src="${rec.dataUrl}" type="application/pdf" style="width:100%;height:64vh;border:1px solid var(--line);border-radius:12px">`
+    ? `<embed src="${rec.dataUrl}" type="application/pdf" style="width:100%;height:60vh;border:1px solid var(--line);border-radius:12px">`
     : `<img src="${rec.dataUrl}" alt="" style="width:100%;border-radius:12px;border:1px solid var(--line)">`;
+  const flikar = recs.length>1 ? `<div class="seg" style="margin-bottom:12px">${recs.map((r,j)=>
+      `<button data-kvi="${j}" class="${j===i?"on":""}">Kvitto ${j+1}</button>`).join("")}</div>` : "";
   root.innerHTML=`
    <div class="modal-bg" id="kvbg"><div class="modal" style="max-width:680px">
      <div class="modal-head"><div class="serif" style="font-size:20px">Kvitto · A${t.ver}</div>
        <button class="x" id="kv-close">✕</button></div>
+     ${flikar}
      <div class="konto" style="margin-bottom:12px">${esc(rec.name)}</div>
      ${view}
      <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
        <a class="btn ghost" href="${rec.dataUrl}" download="${esc(rec.name)}" style="flex:1;text-decoration:none;justify-content:center">⭳ Ladda ner</a>
+       <button class="btn ghost" id="kv-lagg" style="flex:1">+ Lägg till</button>
        <button class="btn ghost" id="kv-byt" style="flex:1">Byt ut</button>
        <button class="btn" id="kv-bort" style="flex:1;background:var(--clay);border-color:var(--clay)">Ta bort</button>
      </div>
@@ -745,10 +854,12 @@ async function openKvittoViewer(t){
   const close=()=>root.innerHTML="";
   document.getElementById("kv-close").onclick=close;
   document.getElementById("kvbg").onclick=e=>{ if(e.target.id==="kvbg") close(); };
-  document.getElementById("kv-byt").onclick=()=>{ close(); attachKvitto(t); };
+  document.querySelectorAll("[data-kvi]").forEach(b=>b.onclick=()=>openKvittoViewer(t, Number(b.dataset.kvi)));
+  document.getElementById("kv-lagg").onclick=()=>{ close(); attachKvitto(t); };
+  document.getElementById("kv-byt").onclick=()=>{ close(); attachKvitto(t, i); };
   document.getElementById("kv-bort").onclick=async ()=>{
-    if(!confirm("Ta bort kvittot? Verifikationen finns kvar.")) return;
-    await Kvitton.del(String(t.id)); t.kvitto=false; delete t.kvittoNamn; save(); close(); render();
+    if(!confirm("Ta bort detta kvitto? Verifikationen finns kvar.")) return;
+    recs.splice(i,1); await sparaKvittoLista(t, recs); save(); close(); render();
   };
 }
 
@@ -812,7 +923,8 @@ function openMatchKvitton(){
        <button class="x" id="mk-close">✕</button></div>
      <div id="match-body">
        <p class="note" style="margin-top:0">Ladda upp ett eller flera kvitton (foto eller PDF). Appen läser av belopp och datum med OCR och föreslår automatiskt den bankhändelse som matchar. PDF kopplas manuellt. Du bekräftar alltid innan något sparas.</p>
-       <input type="file" id="mk-file" accept="image/*,application/pdf" multiple class="input" style="width:100%">
+       <input type="file" id="mk-file" accept="image/*,application/pdf,.zip,application/zip" multiple class="input" style="width:100%">
+       <p class="note">Du kan också välja en zip-fil från banken (t.ex. Lunar). Kvitton i den kopplas direkt till rätt verifikation via transaktions-ID.</p>
        <div style="display:flex;gap:10px;margin-top:16px">
          <button class="btn ghost" id="mk-avbryt" style="flex:1">Avbryt</button>
          <button class="btn" id="mk-las" style="flex:1">Läs av →</button>
@@ -824,9 +936,23 @@ function openMatchKvitton(){
   $("mkbg").onclick=e=>{ if(e.target.id==="mkbg") close(); };
 
   $("mk-las").onclick=async ()=>{
-    const files=Array.from(($("mk-file").files)||[]);
+    let files=Array.from(($("mk-file").files)||[]);
     if(!files.length){ alert("Välj minst ett kvitto."); return; }
     receipts=[];
+    let zipKopplade=0;
+    const zipFiler=files.filter(f=>/\.zip$/i.test(f.name));
+    files=files.filter(f=>!/\.zip$/i.test(f.name));
+    for(const zf of zipFiler){
+      try{
+        $("match-body").innerHTML=`<p class="note">Packar upp ${esc(zf.name)}…</p>`;
+        const z=await lasZip(zf);
+        const res=await kopplaZipKvitton(z.kvitton, msg=>{ $("match-body").innerHTML=`<p class="note">${esc(msg)}</p>`; });
+        zipKopplade+=res.kopplade;
+        files=files.concat(res.ejMatchade.map(k=>k.file)); // resten matchas på belopp/datum
+      }catch(e){ alert(e.message||"Kunde inte läsa zip-filen."); }
+    }
+    if(zipKopplade) save();
+    if(!files.length){ close(); render(); alert(zipKopplade+" kvitton kopplades via transaktions-ID."); return; }
     for(let i=0;i<files.length;i++){
       $("match-body").innerHTML=`<p class="note">Bearbetar kvitto ${i+1} av ${files.length}…<br>${esc(files[i].name)}</p>`;
       let r;
@@ -896,8 +1022,7 @@ function openMatchKvitton(){
         valda[txId]=true;
         const r=receipts[Number(tr.dataset.ri)];
         const t=co().trans.find(x=>String(x.id)===String(txId)); if(!t) continue;
-        try{ await Kvitton.put({ id:String(t.id), name:r.name, type:r.type, dataUrl:r.dataUrl });
-          t.kvitto=true; t.kvittoNamn=r.name; n++; }catch(e){ alert(e.message); }
+        try{ await laggTillKvitto(t, r); n++; }catch(e){ alert(e.message); }
       }
       save(); close(); render();
       alert(n+" kvitton kopplades."+(krockar.length?"\n\nObs: "+krockar.length+" rad(er) pekade på en redan vald verifikation och hoppades över.":""));
@@ -1429,7 +1554,7 @@ function openInst(){
     if(state.companies.length<=1) return;
     const c=co();
     if(!confirm(`Ta bort företaget "${c.firma}" och all dess bokföring (${c.trans.length} verifikationer)? Detta går inte att ångra.`)) return;
-    for(const t of c.trans){ try{ await Kvitton.del(String(t.id)); }catch(e){} }
+    for(const t of c.trans){ try{ await taBortKvitton(t); }catch(e){} }
     state.companies=state.companies.filter(x=>x.id!==c.id);
     state.activeId=state.companies[0].id; state.year="alla"; state.manad="alla";
     save(); render(); openInst();
@@ -1522,19 +1647,120 @@ function decodeFile(buf){
   return txt;
 }
 
+/* ---- Förslag på konto/moms per bankrad ----
+   Ordning: 1) samma leverantör som bokförts tidigare i appen, 2) inbyggda regler, 3) standard.
+   omvand: "eu" / "ej-eu" = förslag på omvänd moms – kontrollera alltid mot kvittot. */
+const LEV_REGLER = [
+  { re:/intern\s*överf|^överföring|income\s*sorter|^lunar$|insättning|egen\s*insättning|swish\s*från\s*eget/i, hoppa:"Överföring mellan egna konton" },
+  { re:/eget\s*uttag|uttag\s*bankomat|^atm|kontantuttag/i, hoppa:"Eget uttag" },
+  { re:/^sl$|storstockholms\s*lokal|västtrafik|skånetrafiken|^sj\b|ul\s*resor/i, konto:"5810", moms:6 },
+  { re:/lunar\s*plan|^avgift$|bankavgift|årsavgift\s*kort|valutaavgift/i, konto:"6570", moms:0 },
+  { re:/anthropic|claude/i, konto:"6540", moms:25, omvand:"eu", not:"Anthropic Ireland" },
+  { re:/openai|chatgpt/i, konto:"6540", moms:25, omvand:"eu", not:"OpenAI Ireland" },
+  { re:/figma/i, konto:"6540", moms:25, omvand:"ej-eu", not:"Figma Inc (USA)" },
+  { re:/webflow/i, konto:"6540", moms:25, omvand:"ej-eu", not:"Webflow Inc (USA)" },
+  { re:/canva/i, konto:"6540", moms:25, omvand:"ej-eu", not:"Canva Pty (Australien)" },
+  { re:/airtable/i, konto:"6540", moms:25, omvand:"ej-eu", not:"Airtable (USA)" },
+  { re:/lastpass/i, konto:"6540", moms:25, omvand:"ej-eu", not:"LastPass (USA)" },
+  { re:/paddle\.net|aragon/i, konto:"6540", moms:25, omvand:"ej-eu", not:"Paddle (Storbritannien)" },
+  { re:/feedspring/i, konto:"6540", moms:25, omvand:"ej-eu" },
+  { re:/strato/i, konto:"6230", moms:25, omvand:"eu", not:"Strato AG (Tyskland)" },
+  { re:/one\.com|loopia|binero|glesys/i, konto:"6230", moms:25 },
+  { re:/youtube|google|wl\*google/i, konto:"6540", moms:25 },
+  { re:/^apple|itunes|app\s*store/i, konto:"6540", moms:25 },
+  { re:/visma|spiris|fortnox|bokio/i, konto:"6540", moms:25 },
+  { re:/telia|tele2|telenor|^tre\b|hallon|comviq/i, konto:"6212", moms:25 },
+  { re:/webhallen|netonnet|elgiganten|inet|komplett|clas\s*ohlson|clasohlson|kjell|nudient|ikea|biltema|jula/i, konto:"5400", moms:25 },
+  { re:/circle\s*k|preem|okq8|st1|ingo|shell|mark-service|tanka/i, konto:"5611", moms:25 },
+  { re:/staples|lyreco|office\s*depot/i, konto:"6110", moms:25 },
+  { re:/linkedin|meta\s*ads|facebk|google\s*ads/i, konto:"5910", moms:25 },
+];
+function levNyckel(text){ return String(text||"").toLowerCase().replace(/[0-9*#.\-_/]+/g," ").replace(/\s+/g," ").trim(); }
+function bankForslag(text, bel, historik){
+  const kostnadsKonto=k=>KONTON.kostnad.find(x=>x.konto===k);
+  const h=historik[levNyckel(text)];
+  if(h) return Object.assign({ inc:true, kalla:"tidigare" }, h, bel>0&&h.typ==="kostnad"?{ not:"Återbetalning · som tidigare" }:{});
+  const r=LEV_REGLER.find(x=>x.re.test(text||""));
+  if(r && r.hoppa) return { inc:false, typ:bel<0?"kostnad":"intakt", konto:bel<0?"6991":"3001", moms:0, omvand:"", not:r.hoppa, kalla:"regel" };
+  if(r){ const k=kostnadsKonto(r.konto)||{konto:r.konto,namn:r.konto};
+    // Positivt belopp från en känd leverantör = återbetalning, minskar kostnaden
+    return { inc:true, typ:"kostnad", konto:k.konto, moms:r.moms, omvand:r.omvand||"", not:(bel>0?"Återbetalning":"")+(r.not?(bel>0?" · ":"")+r.not:""), kalla:"regel" };
+  }
+  return bel<0 ? { inc:true, typ:"kostnad", konto:"6991", moms:25, omvand:"", not:"", kalla:"" }
+               : { inc:true, typ:"intakt", konto:"3001", moms:25, omvand:"", not:"", kalla:"" };
+}
+function bankHistorik(){
+  const h={};
+  co().trans.slice().sort((a,b)=>a.datum<b.datum?-1:1).forEach(t=>{
+    if(!t.beskrivning || t.fromFaktura) return;
+    h[levNyckel(t.beskrivning)]={ typ:t.typ, konto:t.konto, moms:Number(t.momssats)||0, omvand:t.omvand||"", not:"Som tidigare" };
+  });
+  return h;
+}
+
+/* ---- Zip (t.ex. Lunars export med kvitton i Appendix/<datum>/<transaktions-id>/) ---- */
+let _zipP=null;
+function loadJSZip(){
+  if(window.JSZip) return Promise.resolve(window.JSZip);
+  if(_zipP) return _zipP;
+  _zipP=new Promise((res,rej)=>{
+    const sc=document.createElement("script");
+    sc.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    sc.onload=()=>res(window.JSZip);
+    sc.onerror=()=>{ _zipP=null; rej(new Error("Kunde inte ladda zip-läsaren (kräver internet).")); };
+    document.head.appendChild(sc);
+  });
+  return _zipP;
+}
+const MIME={pdf:"application/pdf",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",webp:"image/webp",gif:"image/gif",heic:"image/heic"};
+async function lasZip(file){
+  const JSZip=await loadJSZip();
+  const zip=await JSZip.loadAsync(file);
+  const out={ csv:[], kvitton:[] };
+  for(const path of Object.keys(zip.files)){
+    const e=zip.files[path]; if(e.dir || /(^|\/)(__MACOSX|\.)/.test(path)) continue;
+    const ext=(path.split(".").pop()||"").toLowerCase(), parts=path.split("/");
+    if(ext==="csv"||ext==="txt"){ out.csv.push({ name:parts[parts.length-1], text:decodeFile(await e.async("arraybuffer")) }); continue; }
+    if(!MIME[ext] || parts.length<2) continue; // filer i roten (t.ex. kontoutdraget) är inga kvitton
+    const blob=await e.async("blob");
+    out.kvitton.push({ nyckel:(parts.length>1?parts[parts.length-2]:"").toLowerCase(), name:parts[parts.length-1],
+      file:new File([blob], parts[parts.length-1], { type:MIME[ext] }) });
+  }
+  return out;
+}
+// Kopplar kvitton från zip till verifikationer med samma bank-ID. Returnerar {kopplade, ejMatchade}
+async function kopplaZipKvitton(kvitton, status){
+  const perId={}; co().trans.forEach(t=>{ if(t.bankId) perId[String(t.bankId).toLowerCase()]=t; });
+  let kopplade=0; const ejMatchade=[];
+  for(let i=0;i<kvitton.length;i++){
+    const k=kvitton[i], t=perId[k.nyckel];
+    if(!t){ ejMatchade.push(k); continue; }
+    if(status) status(`Sparar kvitto ${i+1} av ${kvitton.length}…`);
+    try{
+      const p=await processKvitto(k.file);
+      // hoppa över om exakt samma fil redan finns
+      let finns=false; for(const id of kvittoIds(t)){ const r=await Kvitton.get(id); if(r && r.dataUrl===p.dataUrl){ finns=true; break; } }
+      if(!finns){ await laggTillKvitto(t, p); kopplade++; }
+    }catch(e){ ejMatchade.push(k); }
+  }
+  return { kopplade, ejMatchade };
+}
+
 function openImport(){
   const root=document.getElementById("modal");
-  let rows=[];
+  let rows=[], zipKvitton=[];
   const $=id=>document.getElementById(id);
   const close=()=>root.innerHTML="";
 
   root.innerHTML=`
-   <div class="modal-bg" id="impbg"><div class="modal" style="max-width:780px">
+   <div class="modal-bg" id="impbg"><div class="modal" style="max-width:1040px">
      <div class="modal-head"><div class="serif" style="font-size:22px">Importera bank-CSV</div>
        <button class="x" id="imp-close">✕</button></div>
      <div id="imp-body">
-       <p class="note" style="margin-top:0">Exportera dina transaktioner som CSV-fil från din internetbank och välj filen här, eller klistra in raderna nedan.</p>
-       <input type="file" id="imp-file" accept=".csv,.txt,text/csv" class="input" style="width:100%;margin-bottom:12px">
+       <p class="note" style="margin-top:0">Exportera dina transaktioner som CSV-fil från din internetbank och välj filen här, eller klistra in raderna nedan.
+         Har banken en zip med kvitton (t.ex. Lunar) kan du välja CSV-filen <b>och</b> zip-filen samtidigt – kvittona kopplas då automatiskt till rätt rad via transaktions-ID.</p>
+       <input type="file" id="imp-file" accept=".csv,.txt,.zip,text/csv,application/zip" multiple class="input" style="width:100%;margin-bottom:12px">
+       <div id="imp-filinfo" class="note" style="margin:0 0 10px"></div>
        <textarea id="imp-paste" class="input" placeholder="…eller klistra in CSV-text här" style="width:100%;min-height:90px;font-family:'IBM Plex Mono',monospace;font-size:12px"></textarea>
        <div style="display:flex;gap:10px;margin-top:16px">
          <button class="btn ghost" id="imp-avbryt" style="flex:1">Avbryt</button>
@@ -1545,36 +1771,53 @@ function openImport(){
 
   $("imp-close").onclick=close; $("imp-avbryt").onclick=close;
   $("impbg").onclick=e=>{ if(e.target.id==="impbg") close(); };
-  $("imp-file").onchange=e=>{
-    const f=e.target.files[0]; if(!f) return;
-    const r=new FileReader();
-    r.onload=()=>{ rows=parseCSVText(decodeFile(r.result)); steg2(); };
-    r.readAsArrayBuffer(f);
-  };
-  $("imp-tolka").onclick=()=>{
-    const t=$("imp-paste").value;
-    if(t.trim()){ rows=parseCSVText(t); steg2(); }
-    else if(!$("imp-file").files[0]) alert("Välj en fil eller klistra in CSV-text först.");
+
+  async function lasFiler(){
+    const files=Array.from($("imp-file").files||[]);
+    let csvText=null; zipKvitton=[];
+    for(const f of files){
+      if(/\.zip$/i.test(f.name) || f.type==="application/zip" || f.type==="application/x-zip-compressed"){
+        $("imp-filinfo").textContent="Packar upp "+f.name+"…";
+        const z=await lasZip(f); zipKvitton=zipKvitton.concat(z.kvitton);
+        if(!csvText && z.csv.length) csvText=z.csv[0].text;
+      } else if(!csvText){
+        csvText=decodeFile(await f.arrayBuffer());
+      }
+    }
+    return csvText;
+  }
+  $("imp-tolka").onclick=async ()=>{
+    try{
+      const t=$("imp-paste").value;
+      let text = t.trim() ? t : await lasFiler();
+      if(!text){
+        if(zipKvitton.length){ alert("Zip-filen innehöll ingen CSV. Välj bankens CSV-fil tillsammans med zip-filen."); return; }
+        alert("Välj en fil eller klistra in CSV-text först."); return;
+      }
+      rows=parseCSVText(text); steg2();
+    }catch(e){ alert(e.message||"Kunde inte läsa filen."); }
   };
 
-  function guess(keys,names){ for(let i=0;i<keys.length;i++){ const h=keys[i].toLowerCase(); if(names.some(n=>h.includes(n))) return i; } return -1; }
+  function guess(keys,names,not){ for(const n of names){ for(let i=0;i<keys.length;i++){ const h=keys[i].toLowerCase(); if(h.includes(n) && !(not||[]).some(x=>h.includes(x))) return i; } } return -1; }
 
   function steg2(){
     if(!rows.length){ alert("Hittade inga rader i filen."); return; }
     const maxCols=Math.max(...rows.map(r=>r.length));
     const headers=rows[0].map((h,i)=> (h&&h.trim())? h.trim() : "Kolumn "+(i+1));
     const hasHeader=rows[0].filter(c=>/\d/.test(c)).length<=1;
-    const opts=sel=>headers.map((h,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(h)}</option>`).join("");
-    let gD=guess(headers,["datum","date","bokf"]); if(gD<0)gD=0;
-    let gT=guess(headers,["text","beskriv","meddel","referens","motpart","info","narration","rubrik"]); if(gT<0)gT=Math.min(1,maxCols-1);
-    let gB=guess(headers,["belopp","amount","summa","transaktion"]); if(gB<0)gB=maxCols-1;
+    const opts=(sel,tom)=>(tom?`<option value="-1" ${sel<0?"selected":""}>— ingen —</option>`:"")+headers.map((h,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(h)}</option>`).join("");
+    let gD=guess(headers,["bokföringsdag","bokf","datum","date"]); if(gD<0)gD=0;
+    let gT=guess(headers,["titel","text","beskriv","meddel","mottagare","motpart","rubrik","namn","narration","info","referens"],["id"]); if(gT<0)gT=Math.min(1,maxCols-1);
+    let gB=guess(headers,["belopp","amount","summa","transaktion"],["utländ","valuta","foreign","id"]); if(gB<0)gB=maxCols-1;
+    let gI=guess(headers,["transaktions-id","transaktionsid","transaction id","id","löpnummer","arkiv"]);
 
     $("imp-body").innerHTML=`
-      <p class="note" style="margin-top:0">${rows.length} rader hittades. Koppla kolumnerna till rätt fält.</p>
+      <p class="note" style="margin-top:0">${rows.length} rader hittades (inkl. ev. rubrikrad)${zipKvitton.length?` och ${zipKvitton.length} kvitton i zip-filen`:""}. Koppla kolumnerna till rätt fält.</p>
       <div class="form-grid">
         <div><label class="label">Datum</label><select class="select" id="map-d" style="width:100%">${opts(gD)}</select></div>
         <div><label class="label">Belopp</label><select class="select" id="map-b" style="width:100%">${opts(gB)}</select></div>
-        <div style="grid-column:1/-1"><label class="label">Text / beskrivning</label><select class="select" id="map-t" style="width:100%">${opts(gT)}</select></div>
+        <div><label class="label">Text / beskrivning</label><select class="select" id="map-t" style="width:100%">${opts(gT)}</select></div>
+        <div><label class="label">Transaktions-ID (stoppar dubbletter${zipKvitton.length?", kopplar kvitton":""})</label><select class="select" id="map-i" style="width:100%">${opts(gI,true)}</select></div>
       </div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px;cursor:pointer">
         <input type="checkbox" id="map-head" ${hasHeader?"checked":""}> Första raden är rubrik (hoppa över den)</label>
@@ -1583,42 +1826,58 @@ function openImport(){
         <button class="btn" id="imp-granska" style="flex:1">Granska poster →</button>
       </div>`;
     $("imp-tillbaka").onclick=()=>openImport();
-    $("imp-granska").onclick=()=>steg3(Number($("map-d").value),Number($("map-t").value),Number($("map-b").value),$("map-head").checked);
+    $("imp-granska").onclick=()=>steg3(Number($("map-d").value),Number($("map-t").value),Number($("map-b").value),Number($("map-i").value),$("map-head").checked);
   }
 
-  function steg3(di,ti,bi,head){
+  function steg3(di,ti,bi,ii,head){
     const data=head?rows.slice(1):rows;
+    const historik=bankHistorik();
+    const befIds=new Set(co().trans.filter(t=>t.bankId).map(t=>String(t.bankId).toLowerCase()));
+    const befSig=new Set(co().trans.map(t=>t.datum+"|"+belopp(t).brutto.toFixed(2)+"|"+levNyckel(t.beskrivning)));
     const cands=data.map(r=>{
-      const datum=parseDatum(r[di]); const bel=parseBelopp(r[bi]);
-      return { datum, text:(r[ti]||"").trim(), bel, typ:bel>=0?"intakt":"kostnad",
-               ok: datum!=null && !isNaN(bel) && bel!==0 };
+      const datum=parseDatum(r[di]); const bel=parseBelopp(r[bi]); const text=(r[ti]||"").trim();
+      const bankId = ii>=0 ? String(r[ii]||"").trim() : "";
+      const ok = datum!=null && !isNaN(bel) && bel!==0;
+      const c={ datum, text, bel, bankId, ok };
+      if(!ok) return c;
+      Object.assign(c, bankForslag(text, bel, historik));
+      const dublett = (bankId && befIds.has(bankId.toLowerCase())) || befSig.has(datum+"|"+Math.abs(bel).toFixed(2)+"|"+levNyckel(text));
+      if(dublett){ c.inc=false; c.dublett=true; c.not="Finns redan i bokföringen"; }
+      if(bankId) c.harKvitto=zipKvitton.some(k=>k.nyckel===bankId.toLowerCase());
+      return c;
     });
     const giltiga=cands.filter(c=>c.ok);
     if(!giltiga.length){ alert("Kunde inte tolka datum/belopp. Kontrollera att rätt kolumner valts."); return; }
 
-    const kontoSel=(typ,konto)=>`<select class="select imp-konto" style="padding:6px 8px;font-size:13px;width:100%;min-width:170px">${
-      KONTON[typ].map(k=>`<option value="${k.konto}|${k.moms}" ${k.konto===konto?"selected":""}>${k.konto} · ${esc(k.namn)}</option>`).join("")}</select>`;
-    const momsSel=m=>`<select class="select imp-moms" style="padding:6px 8px;font-size:13px;width:72px">${[25,12,6,0].map(x=>`<option value="${x}" ${x===m?"selected":""}>${x}%</option>`).join("")}</select>`;
+    const kontoOpts=(typ,konto)=>KONTON[typ].map(k=>`<option value="${k.konto}" ${k.konto===konto?"selected":""}>${k.konto} · ${esc(k.namn)}</option>`).join("");
+    const momsSel=m=>`<select class="select imp-moms" style="padding:6px 8px;font-size:13px;width:66px">${[25,12,6,0].map(x=>`<option value="${x}" ${x===m?"selected":""}>${x}%</option>`).join("")}</select>`;
+    const omvSel=o=>`<select class="select imp-omv" style="padding:6px 8px;font-size:13px;width:92px" title="Omvänd skattskyldighet">
+        <option value="" ${!o?"selected":""}>Nej</option><option value="eu" ${o==="eu"?"selected":""}>EU</option><option value="ej-eu" ${o==="ej-eu"?"selected":""}>Utanför EU</option></select>`;
 
     let body="";
     cands.forEach((c,idx)=>{
       if(!c.ok) return;
-      const defKonto=c.typ==="intakt"?"3001":"6991";
-      body+=`<tr data-row="${idx}">
-        <td><input type="checkbox" class="imp-inc" checked></td>
+      body+=`<tr data-row="${idx}" style="${c.inc?"":"opacity:.55"}">
+        <td><input type="checkbox" class="imp-inc" ${c.inc?"checked":""}></td>
         <td class="num" style="font-size:12px;white-space:nowrap">${esc(c.datum)}</td>
-        <td style="max-width:190px;font-size:13px">${esc(c.text||"—")}</td>
-        <td><span class="pill ${c.typ==="intakt"?"in":"ut"}">${c.typ==="intakt"?"Intäkt":"Kostnad"}</span></td>
-        <td class="r" style="font-weight:500;white-space:nowrap">${esc(kr(Math.abs(c.bel)))}</td>
-        <td>${kontoSel(c.typ,defKonto)}</td>
-        <td>${momsSel(25)}</td></tr>`;
+        <td style="max-width:180px;font-size:13px;word-break:break-word">${esc(c.text||"—")}${c.harKvitto?' <span title="Kvitto finns i zip-filen" style="color:var(--green,#2f7a4f)">📎</span>':""}
+          ${c.not?`<div class="konto" style="margin-top:3px">${esc(c.not)}</div>`:""}</td>
+        <td class="r" style="font-weight:500;white-space:nowrap;${c.bel>0?"color:var(--green,#2f7a4f)":""}">${c.bel>0?"+":"−"}${esc(kr(Math.abs(c.bel)))}</td>
+        <td><select class="select imp-typ" style="padding:6px 8px;font-size:13px">
+          <option value="kostnad" ${c.typ==="kostnad"?"selected":""}>Kostnad</option><option value="intakt" ${c.typ==="intakt"?"selected":""}>Intäkt</option></select></td>
+        <td><select class="select imp-konto" style="padding:6px 8px;font-size:13px;width:100%;min-width:150px;max-width:210px">${kontoOpts(c.typ,c.konto)}</select></td>
+        <td>${momsSel(c.moms)}</td>
+        <td>${omvSel(c.omvand)}</td></tr>`;
     });
+    const nInc=giltiga.filter(c=>c.inc).length, nDub=giltiga.filter(c=>c.dublett).length, nHopp=giltiga.length-nInc-nDub;
 
     $("imp-body").innerHTML=`
-      <p class="note" style="margin-top:0">${giltiga.length} poster kan importeras. Bocka ur sådant som inte ska bokföras (t.ex. överföringar mellan egna konton eller egna uttag) och justera konto/moms vid behov. Banksaldots belopp tolkas som inkl. moms.</p>
-      <div style="overflow:auto;max-height:46vh;border:1px solid var(--line);border-radius:12px">
+      <p class="note" style="margin-top:0">${giltiga.length} rader tolkade: <b id="imp-antal">${nInc}</b> markerade för import${nHopp?`, ${nHopp} överföringar/uttag avmarkerade`:""}${nDub?`, ${nDub} finns redan`:""}.
+        Förslagen bygger på tidigare bokföringar och kända leverantörer. Kontrollera konto och moms mot kvittot – särskilt <b>omvänd moms</b>, som bara gäller om säljaren inte tagit ut svensk moms.
+        Ett positivt belopp från en leverantör bokförs som minskad kostnad (återbetalning).</p>
+      <div style="overflow:auto;max-height:50vh;border:1px solid var(--line);border-radius:12px">
         <table class="tbl"><thead><tr>
-          <th></th><th>Datum</th><th>Text</th><th>Typ</th><th class="r">Belopp</th><th>Konto</th><th>Moms</th>
+          <th><input type="checkbox" id="imp-alla" title="Markera alla"></th><th>Datum</th><th>Text</th><th class="r">Belopp</th><th>Typ</th><th>Konto</th><th>Moms</th><th>Omvänd</th>
         </tr></thead><tbody id="imp-rows">${body}</tbody></table>
       </div>
       <div style="display:flex;gap:10px;margin-top:18px">
@@ -1626,28 +1885,53 @@ function openImport(){
         <button class="btn" id="imp-kor" style="flex:2">Importera valda poster</button>
       </div>`;
 
+    const rakna=()=>{ $("imp-antal").textContent=document.querySelectorAll("#imp-rows .imp-inc:checked").length; };
     document.querySelectorAll("#imp-rows tr").forEach(tr=>{
-      const ks=tr.querySelector(".imp-konto"), ms=tr.querySelector(".imp-moms");
-      if(ks) ks.onchange=()=>{ ms.value=Number(ks.value.split("|")[1]); };
+      const ks=tr.querySelector(".imp-konto"), ms=tr.querySelector(".imp-moms"), ts=tr.querySelector(".imp-typ"), os=tr.querySelector(".imp-omv"), inc=tr.querySelector(".imp-inc");
+      ks.onchange=()=>{ const k=KONTON[ts.value].find(x=>x.konto===ks.value); if(k) ms.value=k.moms; };
+      ts.onchange=()=>{ ks.innerHTML=kontoOpts(ts.value, ts.value==="intakt"?"3001":"6991"); ks.onchange(); os.value=""; os.disabled=ts.value==="intakt"; };
+      os.disabled=ts.value==="intakt";
+      inc.onchange=()=>{ tr.style.opacity=inc.checked?"":".55"; rakna(); };
     });
+    $("imp-alla").onchange=e=>{ document.querySelectorAll("#imp-rows tr").forEach(tr=>{ const c=cands[Number(tr.dataset.row)]; if(c.dublett) return;
+      const inc=tr.querySelector(".imp-inc"); inc.checked=e.target.checked; tr.style.opacity=inc.checked?"":".55"; }); rakna(); };
     $("imp-tillbaka2").onclick=()=>steg2();
-    $("imp-kor").onclick=()=>{
+    $("imp-kor").onclick=async ()=>{
       let n=0;
-      document.querySelectorAll("#imp-rows tr").forEach(tr=>{
-        if(!tr.querySelector(".imp-inc").checked) return;
+      // Verifikationsnummer ska löpa i datumordning. Banker listar ofta nyast först –
+      // vänd i så fall ordningen så att samma dag behåller rätt inbördes ordning.
+      let valda=Array.from(document.querySelectorAll("#imp-rows tr")).filter(tr=>tr.querySelector(".imp-inc").checked);
+      const gd=giltiga.map(c=>c.datum);
+      if(gd.length>1 && gd[0]>gd[gd.length-1]) valda.reverse();
+      valda=valda.map((tr,i)=>({tr,i})).sort((a,b)=>{ const da=cands[Number(a.tr.dataset.row)].datum, db=cands[Number(b.tr.dataset.row)].datum; return da<db?-1:da>db?1:a.i-b.i; }).map(x=>x.tr);
+      valda.forEach(tr=>{
         const c=cands[Number(tr.dataset.row)];
-        const konto=tr.querySelector(".imp-konto").value.split("|")[0];
-        const kObj=KONTON[c.typ].find(k=>k.konto===konto)||{namn:konto};
-        co().trans.push({
+        const typ=tr.querySelector(".imp-typ").value;
+        const konto=tr.querySelector(".imp-konto").value;
+        const kObj=KONTON[typ].find(k=>k.konto===konto)||{namn:konto};
+        const omv=typ==="kostnad"?tr.querySelector(".imp-omv").value:"";
+        // Kostnad: uttag = positiv kostnad, insättning (återbetalning) = negativ kostnad. Intäkt: tvärtom.
+        const signerat = typ==="kostnad" ? -c.bel : c.bel;
+        const t={
           id:"imp"+Date.now()+"_"+(n)+"_"+Math.floor(Math.random()*1e6),
-          ver:co().nextVer++, datum:c.datum, typ:c.typ,
+          ver:co().nextVer++, datum:c.datum, typ,
           konto, kontoNamn:kObj.namn, beskrivning:c.text,
-          beloppInput:Math.abs(c.bel), inklMoms:true, momssats:Number(tr.querySelector(".imp-moms").value),
-        });
+          beloppInput:Math.round(signerat*100)/100, inklMoms:!omv, momssats:Number(tr.querySelector(".imp-moms").value),
+        };
+        if(omv) t.omvand=omv;
+        if(c.bankId) t.bankId=c.bankId;
+        co().trans.push(t);
         n++;
       });
+      let kvInfo="";
+      if(zipKvitton.length){
+        $("imp-body").innerHTML=`<p class="note" id="imp-status">Kopplar kvitton…</p>`;
+        const res=await kopplaZipKvitton(zipKvitton, msg=>{ const el=$("imp-status"); if(el) el.textContent=msg; });
+        const ej=res.ejMatchade.filter(k=>k.nyckel);
+        kvInfo=`\n${res.kopplade} kvitton från zip-filen kopplades.`+(ej.length?`\n${ej.length} kvitton hörde till rader som inte importerades.`:"");
+      }
       save(); close(); state.vy="verifikationer"; render();
-      alert(n+" poster importerades.");
+      alert(n+" poster importerades."+kvInfo);
     };
   }
 }
@@ -1740,6 +2024,13 @@ async function ghGet(path){
   if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||("GitHub-fel "+res.status)); }
   const j=await res.json();
   if(Array.isArray(j)) return { exists:true, dir:true, entries:j };
+  // Filer över 1 MB skickas utan innehåll i JSON-svaret – hämta dem som rådata i stället
+  if(j.encoding!=="base64" || !j.content){
+    const raw=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${ghEncPath(path)}?ref=${encodeURIComponent(c.branch||"main")}`,
+      { headers:ghHeaders({ "Accept":"application/vnd.github.raw+json" }) });
+    if(!raw.ok) throw new Error("Kunde inte hämta "+path+" (GitHub-fel "+raw.status+")");
+    return { exists:true, sha:j.sha, content:await raw.text() };
+  }
   return { exists:true, sha:j.sha, content:b64ToUtf8(j.content) };
 }
 async function ghPut(path, str, message){
@@ -1758,7 +2049,7 @@ async function buildCompanyData(company){
   try{
     const all=await Kvitton.all();
     const ids=new Set(company.trans.map(t=>String(t.id)));
-    all.forEach(r=>{ if(r&&r.id&&ids.has(String(r.id))) kvitton[r.id]={ name:r.name, type:r.type, dataUrl:r.dataUrl }; });
+    all.forEach(r=>{ if(r&&r.id&&ids.has(kvittoBasId(r.id))) kvitton[r.id]={ name:r.name, type:r.type, dataUrl:r.dataUrl }; });
   }catch(e){ console.warn("Kunde inte läsa kvitton", e); }
   return { app:"ef-bokforing-company", version:1, exportedAt:new Date().toISOString(), company, kvitton };
 }
