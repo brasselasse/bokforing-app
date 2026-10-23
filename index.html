@@ -1658,8 +1658,12 @@ const LEV_REGLER = [
   { re:/lunar\s*bank/i, hoppa:"Överföring mellan egna konton" },
   { re:/avgifter\s*nordea|nordea\s*avgift|kontoavgift|plusgiro\s*avgift/i, konto:"6570", moms:0 },
   { re:/hi3g|^3\s*\(|telia|tele2|telenor|hallon|comviq/i, konto:"6212", moms:25 },
-  { re:/platform\s*gallery|canada\s*inc|lokalhyra|kontorshyra/i, konto:"5010", moms:25 },
-  { re:/hyra\s*q\d|delad\s*hyra|halva\s*hyran/i, konto:"5010", moms:25, not:"Delad lokalhyra – minskar din kostnad" },
+  // Delad lokal: från april 2026 bokförs lokalen i den andra firman. Hyresvärden heter
+  // Platform Gallery från maj (tidigare 7277610 Canada Inc.). Hyresinsättningar från
+  // medhyresgästen hör till samma firma.
+  { re:/platform\s*gallery/i, hoppa:"Lokalhyra – bokförs i den andra firman från april" },
+  { re:/hyra\s*q\d|delad\s*hyra|halva\s*hyran/i, hoppa:"Medhyresgästens del – bokförs i den andra firman från april" },
+  { re:/canada\s*inc|lokalhyra|kontorshyra/i, konto:"5010", moms:25 },
   { re:/^sl$|storstockholms\s*lokal|västtrafik|skånetrafiken|^sj\b|ul\s*resor/i, konto:"5810", moms:6 },
   { re:/lunar\s*plan|^avgift$|bankavgift|årsavgift\s*kort|valutaavgift/i, konto:"6570", moms:0 },
   { re:/anthropic|claude/i, konto:"6540", moms:25, omvand:"eu", not:"Anthropic Ireland" },
