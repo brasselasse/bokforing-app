@@ -1658,12 +1658,8 @@ const LEV_REGLER = [
   { re:/lunar\s*bank/i, hoppa:"Överföring mellan egna konton" },
   { re:/avgifter\s*nordea|nordea\s*avgift|kontoavgift|plusgiro\s*avgift/i, konto:"6570", moms:0 },
   { re:/hi3g|^3\s*\(|telia|tele2|telenor|hallon|comviq/i, konto:"6212", moms:25 },
-  // Delad lokal: från april 2026 bokförs lokalen i den andra firman. Hyresvärden heter
-  // Platform Gallery från maj (tidigare 7277610 Canada Inc.). Hyresinsättningar från
-  // medhyresgästen hör till samma firma.
-  { re:/platform\s*gallery/i, hoppa:"Lokalhyra – bokförs i den andra firman från april" },
-  { re:/hyra\s*q\d|delad\s*hyra|halva\s*hyran/i, hoppa:"Medhyresgästens del – bokförs i den andra firman från april" },
-  { re:/canada\s*inc|lokalhyra|kontorshyra/i, konto:"5010", moms:25 },
+  { re:/platform\s*gallery|canada\s*inc|lokalhyra|kontorshyra/i, konto:"5010", moms:25 },
+  { re:/hyra\s*q\d|delad\s*hyra|halva\s*hyran/i, konto:"5010", moms:25, not:"Medhyresgästens del – minskar lokalkostnaden" },
   { re:/^sl$|storstockholms\s*lokal|västtrafik|skånetrafiken|^sj\b|ul\s*resor/i, konto:"5810", moms:6 },
   { re:/lunar\s*plan|^avgift$|bankavgift|årsavgift\s*kort|valutaavgift/i, konto:"6570", moms:0 },
   { re:/anthropic|claude/i, konto:"6540", moms:25, omvand:"eu", not:"Anthropic Ireland" },
@@ -1690,6 +1686,8 @@ function levNyckel(text){ return String(text||"").toLowerCase().replace(/[0-9*#.
 function bankForslag(text, bel, historik, heltext){
   const regelText=heltext||text||"";
   const kostnadsKonto=k=>KONTON.kostnad.find(x=>x.konto===k);
+  const hopp=(co().importHoppa||{})[levNyckel(text)];
+  if(hopp) return { inc:false, typ:bel<0?"kostnad":"intakt", konto:bel<0?"6991":"3001", moms:0, omvand:"", not:"Hoppades över vid tidigare import"+(hopp.not?" ("+hopp.not+")":""), kalla:"minne" };
   const h=historik[levNyckel(text)];
   if(h && !LEV_REGLER.some(x=>x.hoppa && x.re.test(regelText))) return Object.assign({ inc:true, kalla:"tidigare" }, h, bel>0&&h.typ==="kostnad"?{ not:"Återbetalning · som tidigare" }:{});
   // Överföringar/uttag kollas mot hela raden (t.ex. Nordeas meddelandefält), övriga regler mot texten först
@@ -1936,6 +1934,14 @@ function openImport(){
         if(c.bankId) t.bankId=c.bankId;
         co().trans.push(t);
         n++;
+      });
+      // Kom ihåg leverantörer som bockats ur (gäller bara detta företag). Ibockade tas bort ur minnet.
+      const minne=co().importHoppa||(co().importHoppa={});
+      document.querySelectorAll("#imp-rows tr").forEach(tr=>{
+        const c=cands[Number(tr.dataset.row)]; if(c.dublett) return;
+        const nyckel=levNyckel(c.text); if(!nyckel) return;
+        if(tr.querySelector(".imp-inc").checked) delete minne[nyckel];
+        else if(c.kalla!=="regel" || c.inc) minne[nyckel]={ not:c.kalla==="minne"?(minne[nyckel]||{}).not||"":"" };
       });
       let kvInfo="";
       if(zipKvitton.length){
