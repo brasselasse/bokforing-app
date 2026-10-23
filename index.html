@@ -624,7 +624,11 @@ function render(){
       ${state.vy==="verifikationer" && co().trans.length ? '<button class="btn ghost" id="btn-export">⭳ Exportera CSV</button>':""}
       <button class="btn" id="btn-ny">+ Ny post</button>
     </div>
+    ${_ghNyare.length?`<div class="card" style="margin:0 0 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-color:var(--clay);background:var(--clay-soft,#f6e3dc)">
+      <div style="flex:1;min-width:220px;font-size:14px"><b>Det finns nyare bokföring på GitHub</b> för ${esc(_ghNyare.join(", "))}. Hämta den innan du ändrar något – appen sparar inte automatiskt förrän du har hämtat.</div>
+      <button class="btn" id="gh-banner-hamta">Hämta från GitHub</button></div>`:""}
     ${view}`;
+  const ghb=document.getElementById("gh-banner-hamta"); if(ghb) ghb.onclick=()=>ghPull();
 
   // Event-lyssnare
   document.querySelectorAll("[data-vy]").forEach(b=>b.onclick=()=>{ state.vy=b.dataset.vy; render(); });
@@ -2053,15 +2057,38 @@ async function ghGet(path){
   }
   return { exists:true, sha:j.sha, content:b64ToUtf8(j.content) };
 }
-async function ghPut(path, str, message){
+async function ghPut(path, str, message, sha){
   const c=ghCfg();
-  let sha=null;
-  try{ const cur=await ghGet(path); if(cur.exists && !cur.dir) sha=cur.sha; }catch(e){ /* nytt repo/fil */ }
   const res=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${ghEncPath(path)}`, {
     method:"PUT", headers:ghHeaders({ "Content-Type":"application/json" }),
     body:JSON.stringify({ message, content:utf8ToB64(str), sha:sha||undefined, branch:c.branch||"main" })
   });
+  if(res.status===409) throw new Error("GitHub-versionen ändrades precis av någon annan. Hämta från GitHub och försök igen.");
   if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||("GitHub-fel "+res.status)); }
+  const j=await res.json().catch(()=>({}));
+  return j.content && j.content.sha;
+}
+
+/* ---- Skydd mot att skriva över nyare data ----
+   Appen kommer ihåg vilken version (sha) av varje företagsfil den senast hämtade eller sparade.
+   Är filen på GitHub en annan version än så har den ändrats någon annanstans (annan dator, annan
+   webbläsare, Claude) – då sparar appen aldrig automatiskt, och frågar först vid manuell sparning. */
+const SYNC_KEY="ef-ghsync";
+function syncKarta(){ try{ return JSON.parse(localStorage.getItem(SYNC_KEY))||{}; }catch(e){ return {}; } }
+function syncSha(id){ const k=syncKarta()[ghCfg().owner+"/"+ghCfg().repo]||{}; return k[id]; }
+function setSyncSha(id, sha){ try{ const m=syncKarta(), key=ghCfg().owner+"/"+ghCfg().repo; m[key]=m[key]||{}; m[key][id]=sha; localStorage.setItem(SYNC_KEY, JSON.stringify(m)); }catch(e){} }
+let _ghNyare=[]; // företag som har en nyare version på GitHub
+async function ghKollaNyare(){
+  const c=ghCfg(); if(!c.owner||!c.repo||!c.token) return;
+  try{
+    const listing=await ghGet(ghFolder()); if(!listing.exists||!listing.dir) return;
+    const nyare=[];
+    listing.entries.filter(e=>e.type==="file" && /\.json$/i.test(e.name)).forEach(e=>{
+      const id=e.name.replace(/\.json$/i,""); if(e.sha!==syncSha(id)){
+        const lok=state.companies.find(x=>x.id===id); nyare.push(lok?lok.firma:id); }
+    });
+    const fore=_ghNyare.join("|"); _ghNyare=nyare; if(fore!==nyare.join("|")) render();
+  }catch(e){ console.warn("Kunde inte kontrollera GitHub", e); }
 }
 
 async function buildCompanyData(company){
@@ -2084,14 +2111,34 @@ async function applyCompanyData(data){
   if(!state.activeId || !co()) state.activeId=state.companies[0].id;
 }
 
-async function ghPushCompany(company, status){
+async function ghPushCompany(company, status, opts){
+  opts=opts||{};
   if(status) status("Sparar "+company.firma+"…");
+  const path=ghCompanyPath(company);
+  const cur=await ghGet(path);
+  // Ladda aldrig upp ett helt tomt företag automatiskt (t.ex. standardföretaget i en ny webbläsare)
+  if(opts.auto && !cur.exists && !company.trans.length && !company.fakturor.length && !company.kunder.length) return false;
+  if(cur.exists && cur.sha!==syncSha(company.id)){
+    let fj=null; try{ fj=JSON.parse(cur.content); }catch(e){}
+    const nF=fj&&fj.company&&Array.isArray(fj.company.trans)?fj.company.trans.length:"?";
+    const nar=fj&&fj.exportedAt?new Date(fj.exportedAt).toLocaleString("sv-SE"):"okänd tid";
+    if(opts.auto){
+      if(!_ghNyare.includes(company.firma)){ _ghNyare.push(company.firma); render(); }
+      throw new Error(`Inte sparat – GitHub har en nyare version av ${company.firma} (${nF} verifikationer, sparad ${nar}). Hämta från GitHub först.`);
+    }
+    if(!confirm(`GitHub har en version av ${company.firma} som inte har hämtats till den här webbläsaren:\n\n  På GitHub: ${nF} verifikationer, sparad ${nar}\n  Här: ${company.trans.length} verifikationer\n\nVill du skriva över GitHub-versionen med den här?\n\nOsäker? Tryck Avbryt och välj ”Hämta från GitHub” i stället.`)){
+      if(status) status("Avbrutet – inget sparades."); return false;
+    }
+  }
   const data=await buildCompanyData(company);
-  await ghPut(ghCompanyPath(company), JSON.stringify(data), "Uppdatera "+company.firma+" "+new Date().toISOString());
+  const ny=await ghPut(path, JSON.stringify(data), "Uppdatera "+company.firma+" "+new Date().toISOString(), cur.exists?cur.sha:undefined);
+  if(ny) setSyncSha(company.id, ny);
+  _ghNyare=_ghNyare.filter(n=>n!==company.firma);
+  return true;
 }
-async function ghPush(status){ // aktivt företag
+async function ghPush(status, opts){ // aktivt företag
   const c=ghCfg(); if(!c.owner||!c.repo||!c.token){ (status||alert)("Fyll i repo och token först."); return; }
-  try{ await ghPushCompany(co(), status); if(status) status("Sparat ✓ "+new Date().toLocaleTimeString("sv-SE")); }
+  try{ if(await ghPushCompany(co(), status, opts) && status) status("Sparat ✓ "+new Date().toLocaleTimeString("sv-SE")); }
   catch(err){ if(status) status("Fel: "+err.message); else alert("Fel: "+err.message); }
 }
 async function ghPushAll(status){ // alla företag
@@ -2103,6 +2150,7 @@ async function ghPushAll(status){ // alla företag
 async function ghPull(status){
   const c=ghCfg(); if(!c.owner||!c.repo||!c.token){ (status||alert)("Fyll i repo och token först."); return; }
   if(status) status("Hämtar från GitHub…");
+  status=status||(m=>{ if(/^Fel/.test(m)) alert(m); });
   try{
     const listing=await ghGet(ghFolder());
     let files=[];
@@ -2114,16 +2162,16 @@ async function ghPull(status){
       let got; try{ got=await ghGet(fe.path); }catch(e){ continue; }
       if(!got.exists || got.dir) continue;
       let data; try{ data=JSON.parse(got.content); }catch(e){ continue; }
-      if(data && data.app==="ef-bokforing-company"){ await applyCompanyData(data); n++; }
+      if(data && data.app==="ef-bokforing-company"){ await applyCompanyData(data); setSyncSha(data.company.id, got.sha); n++; }
     }
-    save(); render();
+    _ghNyare=[]; save(); render();
     if(status) status(n+" företag hämtade ✓");
   }catch(err){ if(status) status("Fel: "+err.message); else alert("Fel: "+err.message); }
 }
 function scheduleGhPush(){
   const c=ghCfg(); if(!c.auto||!c.owner||!c.repo||!c.token) return;
   clearTimeout(_ghTimer);
-  _ghTimer=setTimeout(()=>ghPush(msg=>{ const el=document.getElementById("i-gh-status"); if(el) el.textContent=msg; }), 4000);
+  _ghTimer=setTimeout(()=>ghPush(msg=>{ const el=document.getElementById("i-gh-status"); if(el) el.textContent=msg; else if(/^Inte sparat|^Fel/.test(msg)) console.warn(msg); }, { auto:true }), 4000);
 }
 
 /* ============================================================ */
@@ -2131,6 +2179,8 @@ function scheduleGhPush(){
 /* ============================================================ */
 load();
 render();
+ghKollaNyare();
+window.addEventListener("focus", ()=>ghKollaNyare());
 </script>
 </body>
 </html>
