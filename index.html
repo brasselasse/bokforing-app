@@ -1651,8 +1651,14 @@ function decodeFile(buf){
    Ordning: 1) samma leverantör som bokförts tidigare i appen, 2) inbyggda regler, 3) standard.
    omvand: "eu" / "ej-eu" = förslag på omvänd moms – kontrollera alltid mot kvittot. */
 const LEV_REGLER = [
-  { re:/intern\s*överf|^överföring|income\s*sorter|^lunar$|insättning|egen\s*insättning|swish\s*från\s*eget/i, hoppa:"Överföring mellan egna konton" },
+  { re:/intern\s*överf|(^|\s)överföring|income\s*sorter|(^|\s{2})lunar(\s{2}|$)|egen\s*insättning|swish\s*från\s*eget/i, hoppa:"Överföring mellan egna konton" },
   { re:/eget\s*uttag|uttag\s*bankomat|^atm|kontantuttag/i, hoppa:"Eget uttag" },
+  { re:/skatteverket/i, hoppa:"Skatteinbetalning (preliminärskatt/moms) – ingen kostnad" },
+  { re:/first\s*card|eurocard|amex|american\s*express|kortfaktura|kreditkort/i, hoppa:"Betalning av kortfaktura – bokför köpen från kortets kontoutdrag" },
+  { re:/lunar\s*bank/i, hoppa:"Överföring mellan egna konton" },
+  { re:/avgifter\s*nordea|nordea\s*avgift|kontoavgift|plusgiro\s*avgift/i, konto:"6570", moms:0 },
+  { re:/hi3g|^3\s*\(|telia|tele2|telenor|hallon|comviq/i, konto:"6212", moms:25 },
+  { re:/platform\s*gallery|canada\s*inc|lokalhyra|kontorshyra/i, konto:"5010", moms:25 },
   { re:/^sl$|storstockholms\s*lokal|västtrafik|skånetrafiken|^sj\b|ul\s*resor/i, konto:"5810", moms:6 },
   { re:/lunar\s*plan|^avgift$|bankavgift|årsavgift\s*kort|valutaavgift/i, konto:"6570", moms:0 },
   { re:/anthropic|claude/i, konto:"6540", moms:25, omvand:"eu", not:"Anthropic Ireland" },
@@ -1676,11 +1682,13 @@ const LEV_REGLER = [
   { re:/linkedin|meta\s*ads|facebk|google\s*ads/i, konto:"5910", moms:25 },
 ];
 function levNyckel(text){ return String(text||"").toLowerCase().replace(/[0-9*#.\-_/]+/g," ").replace(/\s+/g," ").trim(); }
-function bankForslag(text, bel, historik){
+function bankForslag(text, bel, historik, heltext){
+  const regelText=heltext||text||"";
   const kostnadsKonto=k=>KONTON.kostnad.find(x=>x.konto===k);
   const h=historik[levNyckel(text)];
-  if(h) return Object.assign({ inc:true, kalla:"tidigare" }, h, bel>0&&h.typ==="kostnad"?{ not:"Återbetalning · som tidigare" }:{});
-  const r=LEV_REGLER.find(x=>x.re.test(text||""));
+  if(h && !LEV_REGLER.some(x=>x.hoppa && x.re.test(regelText))) return Object.assign({ inc:true, kalla:"tidigare" }, h, bel>0&&h.typ==="kostnad"?{ not:"Återbetalning · som tidigare" }:{});
+  // Överföringar/uttag kollas mot hela raden (t.ex. Nordeas meddelandefält), övriga regler mot texten först
+  const r=LEV_REGLER.find(x=>x.hoppa && x.re.test(regelText)) || LEV_REGLER.find(x=>!x.hoppa && x.re.test(text||"")) || LEV_REGLER.find(x=>!x.hoppa && x.re.test(regelText));
   if(r && r.hoppa) return { inc:false, typ:bel<0?"kostnad":"intakt", konto:bel<0?"6991":"3001", moms:0, omvand:"", not:r.hoppa, kalla:"regel" };
   if(r){ const k=kostnadsKonto(r.konto)||{konto:r.konto,namn:r.konto};
     // Positivt belopp från en känd leverantör = återbetalning, minskar kostnaden
@@ -1807,7 +1815,7 @@ function openImport(){
     const hasHeader=rows[0].filter(c=>/\d/.test(c)).length<=1;
     const opts=(sel,tom)=>(tom?`<option value="-1" ${sel<0?"selected":""}>— ingen —</option>`:"")+headers.map((h,i)=>`<option value="${i}" ${i===sel?"selected":""}>${esc(h)}</option>`).join("");
     let gD=guess(headers,["bokföringsdag","bokf","datum","date"]); if(gD<0)gD=0;
-    let gT=guess(headers,["titel","text","beskriv","meddel","mottagare","motpart","rubrik","namn","narration","info","referens"],["id"]); if(gT<0)gT=Math.min(1,maxCols-1);
+    let gT=guess(headers,["titel","ytterligare detaljer","text","beskriv","namn","motpart","rubrik","narration","meddel","mottagare","info","referens"],["id"]); if(gT<0)gT=Math.min(1,maxCols-1);
     let gB=guess(headers,["belopp","amount","summa","transaktion"],["utländ","valuta","foreign","id"]); if(gB<0)gB=maxCols-1;
     let gI=guess(headers,["transaktions-id","transaktionsid","transaction id","id","löpnummer","arkiv"]);
 
@@ -1840,7 +1848,8 @@ function openImport(){
       const ok = datum!=null && !isNaN(bel) && bel!==0;
       const c={ datum, text, bel, bankId, ok };
       if(!ok) return c;
-      Object.assign(c, bankForslag(text, bel, historik));
+      const heltext=r.filter((_,i)=>i!==bi && i!==di).join("  ");
+      Object.assign(c, bankForslag(text, bel, historik, heltext));
       const dublett = (bankId && befIds.has(bankId.toLowerCase())) || befSig.has(datum+"|"+Math.abs(bel).toFixed(2)+"|"+levNyckel(text));
       if(dublett){ c.inc=false; c.dublett=true; c.not="Finns redan i bokföringen"; }
       if(bankId) c.harKvitto=zipKvitton.some(k=>k.nyckel===bankId.toLowerCase());
