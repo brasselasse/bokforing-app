@@ -2034,7 +2034,11 @@ var _ghTimer=null;
 function ghCfg(){ try{ return JSON.parse(localStorage.getItem(GH_KEY))||{}; }catch(e){ return {}; } }
 function ghSaveCfg(c){ try{ localStorage.setItem(GH_KEY, JSON.stringify(c)); }catch(e){} }
 function utf8ToB64(s){ return btoa(unescape(encodeURIComponent(s))); }
-function b64ToUtf8(b){ return decodeURIComponent(escape(atob(String(b).replace(/\s/g,"")))); }
+function b64ToUtf8(b){
+  const bin=atob(String(b).replace(/\s/g,"")), u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(u);
+}
 
 function ghHeaders(extra){
   const c=ghCfg();
@@ -2046,17 +2050,19 @@ function ghCompanyPath(company){ const f=ghFolder(); return (f?f+"/":"")+company
 
 async function ghGet(path){
   const c=ghCfg();
-  const res=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${ghEncPath(path)}?ref=${encodeURIComponent(c.branch||"main")}`, { headers:ghHeaders() });
+  const res=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${ghEncPath(path)}?ref=${encodeURIComponent(c.branch||"main")}`, { headers:ghHeaders(), cache:"no-store" });
   if(res.status===404) return { exists:false };
   if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||("GitHub-fel "+res.status)); }
   const j=await res.json();
   if(Array.isArray(j)) return { exists:true, dir:true, entries:j };
-  // Filer över 1 MB skickas utan innehåll i JSON-svaret – hämta dem som rådata i stället
+  // Filer över 1 MB skickas utan innehåll – hämta dem via blob-API:t (egen adress, upp till 100 MB).
+  // Samma adress med annan Accept-header kan ge ett cachat svar utan innehåll i vissa webbläsare.
   if(j.encoding!=="base64" || !j.content){
-    const raw=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${ghEncPath(path)}?ref=${encodeURIComponent(c.branch||"main")}`,
-      { headers:ghHeaders({ "Accept":"application/vnd.github.raw+json" }) });
-    if(!raw.ok) throw new Error("Kunde inte hämta "+path+" (GitHub-fel "+raw.status+")");
-    return { exists:true, sha:j.sha, content:await raw.text() };
+    const bl=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/blobs/${j.sha}`, { headers:ghHeaders(), cache:"no-store" });
+    if(!bl.ok){ const e=await bl.json().catch(()=>({})); throw new Error("Kunde inte hämta "+path+" ("+(e.message||"GitHub-fel "+bl.status)+")"); }
+    const b=await bl.json();
+    if(b.encoding!=="base64" || typeof b.content!=="string") throw new Error("Kunde inte läsa "+path+" (oväntat svar från GitHub)");
+    return { exists:true, sha:j.sha, content:b64ToUtf8(b.content) };
   }
   return { exists:true, sha:j.sha, content:b64ToUtf8(j.content) };
 }
@@ -2176,15 +2182,21 @@ async function ghPull(status){
     if(listing.exists && listing.dir) files=listing.entries.filter(e=>e.type==="file" && /\.json$/i.test(e.name));
     if(!files.length){ if(status) status(await ghDiagnos()); return; }
     if(!confirm(`Hämta upp till ${files.length} företagsfil(er) från GitHub?\n\nFöretag med samma id ersätts av versionen i repot. Övriga företag i appen lämnas orörda.`)){ if(status) status(""); return; }
-    let n=0;
+    let n=0; const fel=[];
     for(const fe of files){
-      let got; try{ got=await ghGet(fe.path); }catch(e){ continue; }
-      if(!got.exists || got.dir) continue;
-      let data; try{ data=JSON.parse(got.content); }catch(e){ continue; }
-      if(data && data.app==="ef-bokforing-company"){ await applyCompanyData(data); setSyncSha(data.company.id, got.sha); n++; }
+      const namn=(state.companies.find(x=>x.id===fe.name.replace(/\.json$/i,""))||{}).firma||fe.name;
+      try{
+        if(status) status("Hämtar "+namn+"…");
+        const got=await ghGet(fe.path);
+        if(!got.exists || got.dir) throw new Error("filen saknas");
+        let data; try{ data=JSON.parse(got.content); }catch(e){ throw new Error("filen kunde inte tolkas ("+e.message+")"); }
+        if(!data || data.app!=="ef-bokforing-company") throw new Error("ingen företagsfil");
+        await applyCompanyData(data); setSyncSha(data.company.id, got.sha); n++;
+      }catch(e){ fel.push(namn+": "+e.message); console.error("Hämtning misslyckades", fe.path, e); }
     }
-    _ghNyare=[]; _ghFel=""; save(); render();
-    if(status) status(n+" företag hämtade ✓");
+    _ghFel=""; save(); ghKollaNyare(); render();
+    if(fel.length){ const m="Fel: "+n+" företag hämtade, "+fel.length+" misslyckades – "+fel.join("; "); if(status) status(m); alert(m); }
+    else if(status) status(n+" företag hämtade ✓");
   }catch(err){ if(status) status("Fel: "+err.message); else alert("Fel: "+err.message); }
 }
 function scheduleGhPush(){
